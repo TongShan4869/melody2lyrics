@@ -228,13 +228,14 @@ h3 {
 
 .workspace {
   display: grid;
-  grid-template-columns: minmax(0, 1.12fr) minmax(380px, 0.88fr);
+  grid-template-columns: minmax(0, 1fr) minmax(340px, 0.76fr);
   gap: 18px;
   align-items: start;
   margin-top: 18px;
 }
 
 .panel {
+  min-width: 0;
   border: 1px solid var(--color-border);
   border-radius: 8px;
   background: rgba(8, 8, 8, 0.94);
@@ -272,9 +273,11 @@ h3 {
 .output-list {
   display: grid;
   gap: 12px;
+  min-width: 0;
 }
 
 .phrase-row {
+  min-width: 0;
   border: 1px solid var(--color-border);
   border-radius: 8px;
   padding: 14px;
@@ -390,6 +393,7 @@ h3 {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 12px;
+  min-width: 0;
 }
 
 label {
@@ -492,6 +496,8 @@ label {
 }
 
 .prompt-box {
+  width: 100%;
+  min-width: 0;
   max-height: 360px;
   overflow: auto;
   border: 1px solid var(--color-border);
@@ -528,22 +534,27 @@ label {
   gap: 10px;
   margin-top: 14px;
   flex-wrap: wrap;
+  min-width: 0;
 }
 
 .api-key {
-  flex: 1 1 250px;
+  flex: 1 1 220px;
+  min-width: 0;
 }
 
 .provider-select {
-  flex: 0 0 128px;
+  flex: 1 1 128px;
+  min-width: 0;
 }
 
 .model-input {
-  flex: 0 1 150px;
+  flex: 1 1 150px;
+  min-width: 0;
 }
 
 .custom-model-input {
-  flex: 0 1 220px;
+  flex: 1 1 190px;
+  min-width: 0;
 }
 
 .output-panel {
