@@ -410,7 +410,7 @@ export default function App() {
     <main>
       <section className="topbar">
         <div>
-          <p className="eyebrow">Browser-only songwriting tool</p>
+          <p className="eyebrow">Prosody-aware lyric studio</p>
           <h1>Melody to Lyrics</h1>
         </div>
         <div className="status-pill">{phrases.length ? `${phrases.length} phrases from ${notes.length} notes` : 'No melody loaded'}</div>
