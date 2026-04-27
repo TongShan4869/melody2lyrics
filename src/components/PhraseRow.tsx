@@ -51,7 +51,7 @@ export function PhraseRow({
             type="button"
             className={`note-bar ${note.stress === 'S' ? 'strong' : 'weak'} ${activeNoteIds.has(note.id) ? 'active' : ''}`}
             style={{ height: `${34 + (note.duration / maxDuration) * 52}px` }}
-            title={`${note.pitch} ${note.stress}; click to split after this note`}
+            title={`${note.pitch} ${note.stress}; click to split at this note`}
             onClick={() => onSplit(index, noteIndex)}
           >
             <span>{note.stress}</span>
@@ -77,7 +77,7 @@ export function PhraseRow({
           Merge next
         </button>
         <span className="hint">
-          <Scissors size={14} /> click a note bar to split after it
+          <Scissors size={14} /> click a note bar to split at it
         </span>
       </div>
     </article>

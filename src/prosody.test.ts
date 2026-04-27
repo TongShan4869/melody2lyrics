@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { analyzeNotes } from './prosody';
+import { analyzeNotes, splitPhrase } from './prosody';
 import type { Note } from './types';
 
 function note(id: number, time: number, duration = 0.25, midi = 60): Note {
@@ -35,5 +35,19 @@ describe('prosody analysis', () => {
     ]);
 
     expect(phrases[0].stressPattern.startsWith('S')).toBe(true);
+  });
+
+  it('splits at the clicked note so it starts the next phrase', () => {
+    const phrases = analyzeNotes([note(1, 0), note(2, 0.25), note(3, 0.5), note(4, 0.75)]);
+    const split = splitPhrase(phrases, 0, 2);
+
+    expect(split).toHaveLength(2);
+    expect(split[0].notes.map((item) => item.id)).toEqual(['1', '2']);
+    expect(split[1].notes.map((item) => item.id)).toEqual(['3', '4']);
+  });
+
+  it('does not split at the first note', () => {
+    const phrases = analyzeNotes([note(1, 0), note(2, 0.25), note(3, 0.5)]);
+    expect(splitPhrase(phrases, 0, 0)).toBe(phrases);
   });
 });

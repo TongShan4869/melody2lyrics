@@ -130,13 +130,13 @@ export function mergePhrases(phrases: Phrase[], index: number): Phrase[] {
   return analyzeNotes(notes);
 }
 
-export function splitPhrase(phrases: Phrase[], phraseIndex: number, afterNoteIndex: number): Phrase[] {
+export function splitPhrase(phrases: Phrase[], phraseIndex: number, atNoteIndex: number): Phrase[] {
   const phrase = phrases[phraseIndex];
-  if (!phrase || afterNoteIndex < 0 || afterNoteIndex >= phrase.notes.length - 1) return phrases;
+  if (!phrase || atNoteIndex <= 0 || atNoteIndex >= phrase.notes.length) return phrases;
 
   const rebuilt = phrases.flatMap((existing, index) => {
     if (index !== phraseIndex) return [existing.notes];
-    return [phrase.notes.slice(0, afterNoteIndex + 1), phrase.notes.slice(afterNoteIndex + 1)];
+    return [phrase.notes.slice(0, atNoteIndex), phrase.notes.slice(atNoteIndex)];
   });
 
   return rebuilt.map((notes, index) => {
