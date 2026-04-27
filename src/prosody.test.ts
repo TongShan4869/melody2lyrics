@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { analyzeNotes, splitPhrase } from './prosody';
+import { analyzeNotes, mergePhrases, splitPhrase } from './prosody';
 import type { Note } from './types';
 
 function note(id: number, time: number, duration = 0.25, midi = 60): Note {
@@ -49,5 +49,14 @@ describe('prosody analysis', () => {
   it('does not split at the first note', () => {
     const phrases = analyzeNotes([note(1, 0), note(2, 0.25), note(3, 0.5)]);
     expect(splitPhrase(phrases, 0, 0)).toBe(phrases);
+  });
+
+  it('keeps manually merged phrases together even across long gaps', () => {
+    const phrases = analyzeNotes([note(1, 0), note(2, 0.5), note(3, 2)]);
+    const merged = mergePhrases(phrases, 0);
+
+    expect(phrases).toHaveLength(2);
+    expect(merged).toHaveLength(1);
+    expect(merged[0].notes.map((item) => item.id)).toEqual(['1', '2', '3']);
   });
 });

@@ -41,26 +41,35 @@ export function segmentNotes(notes: Note[]): Note[][] {
 
 export function analyzeNotes(notes: Note[]): Phrase[] {
   const orderedNotes = [...notes].sort((a, b) => a.time - b.time);
+  return analyzePhraseGroups(segmentNotes(orderedNotes), orderedNotes);
+}
+
+function analyzePhraseGroups(noteGroups: Note[][], allNotes = noteGroups.flat()): Phrase[] {
+  const orderedNotes = [...allNotes].sort((a, b) => a.time - b.time);
   const beat = estimateBeat(orderedNotes);
-  const phrases = segmentNotes(orderedNotes);
 
-  return phrases.map((phraseNotes, phraseIndex) => {
-    const analyzedNotes = analyzePhraseNotes(phraseNotes, beat);
-    const stressPattern = analyzedNotes.map((note) => note.stress).join('-');
-    const first = analyzedNotes[0];
-    const last = analyzedNotes[analyzedNotes.length - 1];
-    const penultimate = analyzedNotes[analyzedNotes.length - 2];
-
-    return {
-      id: `phrase-${phraseIndex}`,
-      notes: analyzedNotes,
-      syllables: analyzedNotes.length,
-      stressPattern,
-      endingDirection: endingDirection(penultimate?.midi, last?.midi),
-      startTime: first?.time ?? 0,
-      endTime: last ? last.time + last.duration : 0,
-    };
+  return noteGroups.filter((phraseNotes) => phraseNotes.length > 0).map((phraseNotes, phraseIndex) => {
+    const orderedPhraseNotes = [...phraseNotes].sort((a, b) => a.time - b.time);
+    const analyzedNotes = analyzePhraseNotes(orderedPhraseNotes, beat);
+    return buildPhrase(analyzedNotes, phraseIndex);
   });
+}
+
+function buildPhrase(analyzedNotes: AnalyzedNote[], phraseIndex: number): Phrase {
+  const stressPattern = analyzedNotes.map((note) => note.stress).join('-');
+  const first = analyzedNotes[0];
+  const last = analyzedNotes[analyzedNotes.length - 1];
+  const penultimate = analyzedNotes[analyzedNotes.length - 2];
+
+  return {
+    id: `phrase-${phraseIndex}`,
+    notes: analyzedNotes,
+    syllables: analyzedNotes.length,
+    stressPattern,
+    endingDirection: endingDirection(penultimate?.midi, last?.midi),
+    startTime: first?.time ?? 0,
+    endTime: last ? last.time + last.duration : 0,
+  };
 }
 
 function analyzePhraseNotes(notes: Note[], beat: number): AnalyzedNote[] {
@@ -122,12 +131,12 @@ function endingDirection(previous?: number, current?: number): Phrase['endingDir
 
 export function mergePhrases(phrases: Phrase[], index: number): Phrase[] {
   if (index < 0 || index >= phrases.length - 1) return phrases;
-  const notes = phrases.flatMap((phrase, phraseIndex) => {
-    if (phraseIndex === index) return [...phrase.notes, ...phrases[index + 1].notes];
+  const noteGroups = phrases.flatMap((phrase, phraseIndex) => {
+    if (phraseIndex === index) return [[...phrase.notes, ...phrases[index + 1].notes]];
     if (phraseIndex === index + 1) return [];
-    return phrase.notes;
+    return [phrase.notes];
   });
-  return analyzeNotes(notes);
+  return analyzePhraseGroups(noteGroups, phrases.flatMap((phrase) => phrase.notes));
 }
 
 export function splitPhrase(phrases: Phrase[], phraseIndex: number, atNoteIndex: number): Phrase[] {
@@ -139,8 +148,5 @@ export function splitPhrase(phrases: Phrase[], phraseIndex: number, atNoteIndex:
     return [phrase.notes.slice(0, atNoteIndex), phrase.notes.slice(atNoteIndex)];
   });
 
-  return rebuilt.map((notes, index) => {
-    const analyzed = analyzeNotes(notes)[0];
-    return { ...analyzed, id: `phrase-${index}` };
-  });
+  return analyzePhraseGroups(rebuilt, phrases.flatMap((existing) => existing.notes));
 }
