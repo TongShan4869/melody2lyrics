@@ -609,7 +609,7 @@ export default function App() {
       {error && <div className="error"><XCircle size={16} /> {error}</div>}
 
       <div className="workspace">
-        <section className="panel">
+        <section className="panel direction-panel">
           <div className="panel-heading">
             <h2>Prosody</h2>
             <div className="button-row">
