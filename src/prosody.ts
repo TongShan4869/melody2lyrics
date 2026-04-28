@@ -1,6 +1,10 @@
 import type { AnalyzedNote, Note, Phrase } from './types';
 
 const GAP_SECONDS_FLOOR = 0.4;
+const MIN_AUTO_LINE_SYLLABLES = 6;
+const PREFERRED_AUTO_LINE_SYLLABLES = 12;
+const MAX_AUTO_LINE_SYLLABLES = 20;
+const STRONG_STRESS_THRESHOLD = 0.8;
 
 export function estimateBeat(notes: Note[]): number {
   const iois = notes
@@ -36,7 +40,7 @@ export function segmentNotes(notes: Note[]): Note[][] {
     phrases[phrases.length - 1].push(notes[index]);
   }
 
-  return phrases;
+  return phrases.flatMap(splitOversizedPhrase);
 }
 
 export function analyzeNotes(notes: Note[]): Phrase[] {
@@ -75,31 +79,26 @@ function buildPhrase(analyzedNotes: AnalyzedNote[], phraseIndex: number): Phrase
 function analyzePhraseNotes(notes: Note[], beat: number): AnalyzedNote[] {
   if (notes.length === 0) return [];
 
-  const maxDuration = Math.max(...notes.map((note) => note.duration), 0.001);
-  const minPitch = Math.min(...notes.map((note) => note.midi));
-  const maxPitch = Math.max(...notes.map((note) => note.midi));
-  const pitchRange = Math.max(1, maxPitch - minPitch);
-
-  const phraseStart = notes[0].time;
-  const scored = notes.map((note, index) => {
-    const metric = index === 0 ? 1 : metricStress(note, phraseStart, beat);
-    const duration = note.duration / maxDuration;
-    const pitch = (note.midi - minPitch) / pitchRange;
-    const velocity = note.velocity || 0.75;
-    const stressScore = 0.45 * metric + 0.25 * duration + 0.2 * pitch + 0.1 * velocity;
-    return { ...note, stressScore };
+  const phraseStart = notes[0];
+  const analyzed = notes.map((note): AnalyzedNote => {
+    const stressScore = metricStress(note, phraseStart, beat);
+    return {
+      ...note,
+      stressScore,
+      stress: stressScore >= STRONG_STRESS_THRESHOLD ? 'S' : 'w',
+    };
   });
 
-  const stressCount = Math.max(1, Math.ceil(scored.length * 0.4));
-  const threshold = [...scored].sort((a, b) => b.stressScore - a.stressScore)[stressCount - 1]?.stressScore ?? 1;
+  if (analyzed.some((note) => note.stress === 'S')) return analyzed;
 
-  return scored.map((note) => ({
+  const anchor = analyzed.reduce((best, note) => (note.stressScore > best.stressScore ? note : best), analyzed[0]);
+  return analyzed.map((note): AnalyzedNote => ({
     ...note,
-    stress: note === scored[0] || note.stressScore >= threshold ? 'S' : 'w',
+    stress: note === anchor ? 'S' : 'w',
   }));
 }
 
-function metricStress(note: Note, phraseStart: number, estimatedBeat: number): number {
+function metricStress(note: Note, phraseStart: Note, estimatedBeat: number): number {
   if (note.ticks != null && note.ppq != null && note.ppq > 0) {
     const [numerator, denominator] = note.timeSignature ?? [4, 4];
     const ticksPerBeat = note.ppq * (4 / denominator);
@@ -108,14 +107,61 @@ function metricStress(note: Note, phraseStart: number, estimatedBeat: number): n
     const distanceToBeat = Math.min(tickInBeat, ticksPerBeat - tickInBeat) / ticksPerBeat;
     const beatCloseness = Math.max(0, 1 - distanceToBeat * 2);
     const beatInBar = Math.floor(positiveModulo(note.ticks, ticksPerBar) / ticksPerBeat);
-    const beatWeight = beatInBar === 0 ? 1 : 0.82;
+    const beatWeight = metricBeatWeight(beatInBar, numerator);
 
     return beatCloseness * beatWeight;
   }
 
-  const beatPosition = (note.time - phraseStart) / estimatedBeat;
+  const [numerator] = note.timeSignature ?? phraseStart.timeSignature ?? [4, 4];
+  const beatPosition = (note.time - phraseStart.time) / estimatedBeat;
   const distanceToBeat = Math.abs(beatPosition - Math.round(beatPosition));
-  return Math.max(0, 1 - distanceToBeat * 2);
+  const beatCloseness = Math.max(0, 1 - distanceToBeat * 2);
+  const beatInCycle = positiveModulo(Math.round(beatPosition), numerator);
+
+  return beatCloseness * metricBeatWeight(beatInCycle, numerator);
+}
+
+function metricBeatWeight(beatInBar: number, numerator: number): number {
+  if (beatInBar === 0) return 1;
+  if (numerator === 4 && beatInBar === 2) return 0.85;
+  if (numerator === 6 && beatInBar === 3) return 0.85;
+  if (numerator >= 8 && beatInBar === Math.floor(numerator / 2)) return 0.85;
+  return 0.45;
+}
+
+function splitOversizedPhrase(notes: Note[]): Note[][] {
+  if (notes.length <= MAX_AUTO_LINE_SYLLABLES) return [notes];
+
+  const phrases: Note[][] = [];
+  let phraseStartIndex = 0;
+  const estimatedBeat = estimateBeat(notes);
+
+  for (let index = 1; index < notes.length; index += 1) {
+    const currentLength = index - phraseStartIndex;
+    if (currentLength < MIN_AUTO_LINE_SYLLABLES) continue;
+
+    const shouldSplitAtMusicalBoundary =
+      currentLength >= PREFERRED_AUTO_LINE_SYLLABLES && isStrongLineStart(notes[index], notes[phraseStartIndex], estimatedBeat);
+    const shouldForceSplit = currentLength >= MAX_AUTO_LINE_SYLLABLES;
+
+    if (shouldSplitAtMusicalBoundary || shouldForceSplit) {
+      phrases.push(notes.slice(phraseStartIndex, index));
+      phraseStartIndex = index;
+    }
+  }
+
+  const finalPhrase = notes.slice(phraseStartIndex);
+  if (finalPhrase.length < MIN_AUTO_LINE_SYLLABLES && phrases.length > 0) {
+    phrases[phrases.length - 1] = [...phrases[phrases.length - 1], ...finalPhrase];
+  } else {
+    phrases.push(finalPhrase);
+  }
+
+  return phrases;
+}
+
+function isStrongLineStart(note: Note, phraseStart: Note, estimatedBeat: number): boolean {
+  return metricStress(note, phraseStart, estimatedBeat) >= STRONG_STRESS_THRESHOLD;
 }
 
 function positiveModulo(value: number, modulo: number): number {

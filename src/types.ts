@@ -62,7 +62,6 @@ export type LyricsContext = {
   mustInclude: string;
   avoid: string;
   rhymeScheme: string;
-  sectionLabels: string;
   strictSyllables: boolean;
 };
 

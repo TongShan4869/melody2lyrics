@@ -2,8 +2,8 @@ import { describe, expect, it } from 'vitest';
 import { analyzeNotes, mergePhrases, splitPhrase } from './prosody';
 import type { Note } from './types';
 
-function note(id: number, time: number, duration = 0.25, midi = 60): Note {
-  return { id: String(id), time, duration, midi, pitch: 'C4', velocity: 0.8 };
+function note(id: number, time: number, duration = 0.25, midi = 60, options: Partial<Note> = {}): Note {
+  return { id: String(id), time, duration, midi, pitch: 'C4', velocity: 0.8, ...options };
 }
 
 describe('prosody analysis', () => {
@@ -22,19 +22,76 @@ describe('prosody analysis', () => {
     expect(phrases).toHaveLength(2);
   });
 
-  it('marks at least one strong stress per phrase', () => {
-    const phrases = analyzeNotes([note(1, 0), note(2, 0.5), note(3, 1)]);
-    expect(phrases[0].stressPattern).toContain('S');
+  it('splits long continuous rap runs into singable lyric lines', () => {
+    const notes = Array.from({ length: 48 }, (_, index) =>
+      note(index + 1, index * 0.125, 0.1, 60, {
+        ticks: index * 120,
+        durationTicks: 96,
+        ppq: 480,
+        timeSignature: [4, 4],
+      }),
+    );
+    const phrases = analyzeNotes(notes);
+
+    expect(phrases).toHaveLength(3);
+    expect(phrases.map((phrase) => phrase.syllables)).toEqual([16, 16, 16]);
   });
 
-  it('treats the first note of each phrase as strong', () => {
+  it('extends dense lines so the next line can start on a strong beat', () => {
+    const notes = Array.from({ length: 40 }, (_, index) =>
+      note(index + 1, index * 0.125, 0.1, 60, {
+        ticks: index * 120,
+        durationTicks: 96,
+        ppq: 480,
+        timeSignature: [5, 4],
+      }),
+    );
+    const phrases = analyzeNotes(notes);
+
+    expect(phrases.map((phrase) => phrase.syllables)).toEqual([20, 20]);
+    expect(phrases.every((phrase) => phrase.stressPattern.startsWith('S'))).toBe(true);
+  });
+
+  it('force-splits oversized phrases even without MIDI tick metadata', () => {
+    const notes = Array.from({ length: 35 }, (_, index) => note(index + 1, index * 0.1, 0.08));
+    const phrases = analyzeNotes(notes);
+
+    expect(phrases.length).toBeGreaterThan(1);
+    expect(Math.max(...phrases.map((phrase) => phrase.syllables))).toBeLessThanOrEqual(20);
+  });
+
+  it('marks metric strong beats from MIDI ticks and time signature', () => {
+    const notes = [0, 480, 960, 1440].map((ticks, index) =>
+      note(index + 1, index * 0.5, 0.25, 60, {
+        ticks,
+        durationTicks: 240,
+        ppq: 480,
+        timeSignature: [4, 4],
+      }),
+    );
+    const phrases = analyzeNotes(notes);
+
+    expect(phrases[0].stressPattern).toBe('S-w-S-w');
+  });
+
+  it('does not let velocity override metric position', () => {
     const phrases = analyzeNotes([
-      note(1, 0, 0.1, 60),
-      note(2, 0.25, 1, 72),
-      note(3, 0.5, 1, 72),
+      note(1, 0, 0.1, 60, { ticks: 0, ppq: 480, timeSignature: [4, 4], velocity: 0.1 }),
+      note(2, 0.25, 0.1, 60, { ticks: 240, ppq: 480, timeSignature: [4, 4], velocity: 1 }),
+      note(3, 0.5, 0.1, 60, { ticks: 480, ppq: 480, timeSignature: [4, 4], velocity: 1 }),
     ]);
 
-    expect(phrases[0].stressPattern.startsWith('S')).toBe(true);
+    expect(phrases[0].stressPattern).toBe('S-w-w');
+  });
+
+  it('keeps every lyric line anchored when no note lands on a strong beat', () => {
+    const phrases = analyzeNotes([
+      note(1, 0, 0.1, 60, { ticks: 240, ppq: 480, timeSignature: [4, 4] }),
+      note(2, 0.5, 0.1, 60, { ticks: 720, ppq: 480, timeSignature: [4, 4] }),
+      note(3, 1, 0.1, 60, { ticks: 1200, ppq: 480, timeSignature: [4, 4] }),
+    ]);
+
+    expect(phrases[0].stressPattern).toBe('S-w-w');
   });
 
   it('splits at the clicked note so it starts the next phrase', () => {

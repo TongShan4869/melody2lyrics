@@ -1,4 +1,4 @@
-import { Pause, Play, Split, Scissors } from 'lucide-react';
+import { Flag, Pause, Play, Split, Scissors } from 'lucide-react';
 import type { Phrase, PhraseLockState, LockPolicy } from '../types';
 import { LockInput } from './LockInput';
 
@@ -11,7 +11,9 @@ type Props = {
   onClear: (index: number) => void;
   onSplit: (phraseIndex: number, noteIndex: number) => void;
   onMerge: (phraseIndex: number) => void;
+  onAddSectionMarker: (phraseIndex: number) => void;
   canMerge: boolean;
+  canAddSectionMarker: boolean;
   activeNoteIds: Set<string>;
   isPlaying: boolean;
   onPlayPhrase: (phrase: Phrase) => void;
@@ -26,7 +28,9 @@ export function PhraseRow({
   onClear,
   onSplit,
   onMerge,
+  onAddSectionMarker,
   canMerge,
+  canAddSectionMarker,
   activeNoteIds,
   isPlaying,
   onPlayPhrase,
@@ -75,6 +79,10 @@ export function PhraseRow({
         <button type="button" className="ghost small" disabled={!canMerge} onClick={() => onMerge(index)}>
           <Split size={15} />
           Merge next
+        </button>
+        <button type="button" className="ghost small" disabled={!canAddSectionMarker} onClick={() => onAddSectionMarker(index)}>
+          <Flag size={15} />
+          Section here
         </button>
         <span className="hint">
           <Scissors size={14} /> click a note bar to split at it

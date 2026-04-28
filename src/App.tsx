@@ -17,10 +17,13 @@ const initialContext: LyricsContext = {
   otherNotes: '',
   mustInclude: '',
   avoid: '',
-  rhymeScheme: 'AABB',
-  sectionLabels: 'verse, verse, chorus, chorus',
+  rhymeScheme: 'SECTION',
   strictSyllables: true,
 };
+
+const sectionOptions = ['Intro', 'Verse', 'Rap verse', 'Pre-chorus', 'Chorus', 'Post-chorus', 'Rap break', 'Bridge', 'Outro', 'Ad-lib'];
+const sectionRepeatOptions = ['', '1', '2', '3', '4', '5', '6', '7', '8', '9', '10', '11', '12'];
+const CUSTOM_SECTION = '__custom_section__';
 
 type LlmProvider = 'openai' | 'anthropic' | 'deepseek';
 const CUSTOM_MODEL = '__custom__';
@@ -61,6 +64,110 @@ function formatTime(seconds: number): string {
   return `${minutes}:${remainder}`;
 }
 
+function defaultSectionLabels(count: number): string[] {
+  return Array.from({ length: count }, () => 'Verse 1');
+}
+
+function parseSectionLabel(label: string): { type: string; repeat: string } {
+  const trimmed = label.trim();
+  const match = trimmed.match(/^(.*?)(?:\s+(\d+))?$/);
+  return {
+    type: match?.[1]?.trim() || '',
+    repeat: match?.[2] ?? '',
+  };
+}
+
+function formatSectionLabel(type: string, repeat: string): string {
+  const cleanType = type.trim();
+  const cleanRepeat = repeat.trim();
+  if (!cleanType) return cleanRepeat ? `Section ${cleanRepeat}` : '';
+  return cleanRepeat ? `${cleanType} ${cleanRepeat}` : cleanType;
+}
+
+function nextSectionLabel(label: string): string {
+  const parsed = parseSectionLabel(label);
+  const type = parsed.type || 'Section';
+  const repeat = Number.parseInt(parsed.repeat || '1', 10);
+  return formatSectionLabel(type, String(Number.isFinite(repeat) ? repeat + 1 : 2));
+}
+
+function syncSectionLabels(existing: string[], count: number): string[] {
+  const defaults = defaultSectionLabels(count);
+  return Array.from({ length: count }, (_, index) => existing[index] ?? defaults[index] ?? '');
+}
+
+function sectionEndIndex(labels: string[], startIndex: number, totalCount: number): number {
+  const label = labels[startIndex] ?? '';
+  let endIndex = startIndex + 1;
+  while (endIndex < totalCount && (labels[endIndex] ?? '') === label) {
+    endIndex += 1;
+  }
+  return endIndex;
+}
+
+function SectionMarker({
+  label,
+  lineStart,
+  lineEnd,
+  canRemove,
+  onChange,
+  onRemove,
+}: {
+  label: string;
+  lineStart: number;
+  lineEnd: number;
+  canRemove: boolean;
+  onChange: (value: string) => void;
+  onRemove: () => void;
+}) {
+  const parsedLabel = parseSectionLabel(label);
+  const isPresetSection = sectionOptions.includes(parsedLabel.type);
+  const selectValue = isPresetSection ? parsedLabel.type : CUSTOM_SECTION;
+  const lineRange = lineStart === lineEnd ? `Line ${lineStart}` : `Lines ${lineStart}-${lineEnd}`;
+
+  return (
+    <div className="section-marker">
+      <div>
+        <span className="eyebrow">Section marker</span>
+        <strong>{lineRange}</strong>
+      </div>
+      <label className="section-label">
+        <span>Type</span>
+        <div className="section-control">
+          <select
+            value={selectValue}
+            onChange={(event) => {
+              const nextValue = event.target.value;
+              onChange(formatSectionLabel(nextValue === CUSTOM_SECTION ? '' : nextValue, parsedLabel.repeat));
+            }}
+          >
+            {sectionOptions.map((option) => (
+              <option key={option} value={option}>{option}</option>
+            ))}
+            <option value={CUSTOM_SECTION}>Custom...</option>
+          </select>
+          {selectValue === CUSTOM_SECTION && (
+            <input
+              value={parsedLabel.type}
+              placeholder="Custom section"
+              onChange={(event) => onChange(formatSectionLabel(event.target.value, parsedLabel.repeat))}
+            />
+          )}
+        </div>
+      </label>
+      <label className="section-label repeat-label">
+        <span>Repeat</span>
+        <select value={parsedLabel.repeat} onChange={(event) => onChange(formatSectionLabel(parsedLabel.type, event.target.value))}>
+          {sectionRepeatOptions.map((option) => (
+            <option key={option || 'none'} value={option}>{option || '-'}</option>
+          ))}
+        </select>
+      </label>
+      <button type="button" className="ghost small" disabled={!canRemove} onClick={onRemove}>Remove marker</button>
+    </div>
+  );
+}
+
 function InfoLabel({ label, info }: { label: string; info: string }) {
   return (
     <span className="field-label">
@@ -79,6 +186,7 @@ export default function App() {
   const [notes, setNotes] = useState<Note[]>([]);
   const [phrases, setPhrases] = useState<Phrase[]>([]);
   const [locks, setLocks] = useState<PhraseLockState[]>([]);
+  const [sectionLabels, setSectionLabels] = useState<string[]>([]);
   const [context, setContext] = useState<LyricsContext>(initialContext);
   const [llmProvider, setLlmProvider] = useState<LlmProvider>('openai');
   const [apiKey, setApiKey] = useState('');
@@ -110,7 +218,7 @@ export default function App() {
       lockedAfterGeneration: true,
     };
   }), [locks, output]);
-  const prompt = useMemo(() => buildPrompt(phrases, effectiveLocks, context), [phrases, effectiveLocks, context]);
+  const prompt = useMemo(() => buildPrompt(phrases, effectiveLocks, context, sectionLabels), [phrases, effectiveLocks, context, sectionLabels]);
   const strictMismatch = effectiveLocks.some((lock, index) => (
     !lock.lockedAfterGeneration
     && lock.policy === 'strict'
@@ -154,6 +262,7 @@ export default function App() {
       setNotes(parsed.notes);
       setPhrases(analyzed);
       setLocks(analyzed.map((_, index) => parseLockInput('', index)));
+      setSectionLabels(defaultSectionLabels(analyzed.length));
       setOutput([]);
       setPlayheadTime(0);
       setPreviewStartTime(0);
@@ -165,9 +274,38 @@ export default function App() {
     }
   }
 
-  function updatePhrases(nextPhrases: Phrase[]) {
+  function updatePhrases(nextPhrases: Phrase[], nextSectionLabels?: string[]) {
     setPhrases(nextPhrases);
     setLocks((existing) => nextPhrases.map((_, index) => existing[index] ?? parseLockInput('', index)));
+    setSectionLabels((existing) => syncSectionLabels(nextSectionLabels ?? existing, nextPhrases.length));
+  }
+
+  function handleSectionMarkerChange(startIndex: number, value: string) {
+    setSectionLabels((existing) => {
+      const synced = syncSectionLabels(existing, phrases.length);
+      const endIndex = sectionEndIndex(synced, startIndex, phrases.length);
+      return synced.map((label, index) => (index >= startIndex && index < endIndex ? value : label));
+    });
+  }
+
+  function handleAddSectionMarker(index: number) {
+    setSectionLabels((existing) => {
+      const synced = syncSectionLabels(existing, phrases.length);
+      if (index <= 0 || synced[index] !== synced[index - 1]) return synced;
+      const endIndex = sectionEndIndex(synced, index, phrases.length);
+      const label = nextSectionLabel(synced[index - 1] ?? synced[index] ?? 'Section 1');
+      return synced.map((existingLabel, labelIndex) => (labelIndex >= index && labelIndex < endIndex ? label : existingLabel));
+    });
+  }
+
+  function handleRemoveSectionMarker(index: number) {
+    setSectionLabels((existing) => {
+      const synced = syncSectionLabels(existing, phrases.length);
+      if (index <= 0) return synced;
+      const previousLabel = synced[index - 1] ?? '';
+      const endIndex = sectionEndIndex(synced, index, phrases.length);
+      return synced.map((label, labelIndex) => (labelIndex >= index && labelIndex < endIndex ? previousLabel : label));
+    });
   }
 
   function handleLockInputChange(index: number, value: string) {
@@ -183,11 +321,16 @@ export default function App() {
   }
 
   function handleSplit(phraseIndex: number, noteIndex: number) {
-    updatePhrases(splitPhrase(phrases, phraseIndex, noteIndex));
+    const nextSectionLabels = [
+      ...sectionLabels.slice(0, phraseIndex + 1),
+      sectionLabels[phraseIndex] ?? '',
+      ...sectionLabels.slice(phraseIndex + 1),
+    ];
+    updatePhrases(splitPhrase(phrases, phraseIndex, noteIndex), nextSectionLabels);
   }
 
   function handleMerge(phraseIndex: number) {
-    updatePhrases(mergePhrases(phrases, phraseIndex));
+    updatePhrases(mergePhrases(phrases, phraseIndex), sectionLabels.filter((_, index) => index !== phraseIndex + 1));
   }
 
   async function togglePreview() {
@@ -477,23 +620,42 @@ export default function App() {
             <p className="empty">Upload a MIDI file to see phrase boundaries, syllable counts, stress, and line-ending direction.</p>
           ) : (
             <div className="phrase-list">
-              {phrases.map((phrase, index) => (
-                <PhraseRow
-                  key={phrase.id}
-                  phrase={phrase}
-                  index={index}
-                  lock={locks[index]}
-                  onLockInputChange={handleLockInputChange}
-                  onPolicyChange={handlePolicyChange}
-                  onClear={handleClearLock}
-                  onSplit={handleSplit}
-                  onMerge={handleMerge}
-                  canMerge={index < phrases.length - 1}
-                  activeNoteIds={activeNoteIds}
-                  isPlaying={playingPhraseId === phrase.id}
-                  onPlayPhrase={playPhrasePreview}
-                />
-              ))}
+              {phrases.map((phrase, index) => {
+                const sectionLabel = sectionLabels[index] ?? '';
+                const isSectionStart = index === 0 || sectionLabel !== (sectionLabels[index - 1] ?? '');
+                const sectionEnd = isSectionStart ? sectionEndIndex(sectionLabels, index, phrases.length) : index + 1;
+
+                return (
+                  <div key={phrase.id} className="phrase-stack">
+                    {isSectionStart && (
+                      <SectionMarker
+                        label={sectionLabel}
+                        lineStart={index + 1}
+                        lineEnd={sectionEnd}
+                        canRemove={index > 0}
+                        onChange={(value) => handleSectionMarkerChange(index, value)}
+                        onRemove={() => handleRemoveSectionMarker(index)}
+                      />
+                    )}
+                    <PhraseRow
+                      phrase={phrase}
+                      index={index}
+                      lock={locks[index]}
+                      onLockInputChange={handleLockInputChange}
+                      onPolicyChange={handlePolicyChange}
+                      onClear={handleClearLock}
+                      onSplit={handleSplit}
+                      onMerge={handleMerge}
+                      onAddSectionMarker={handleAddSectionMarker}
+                      canMerge={index < phrases.length - 1}
+                      canAddSectionMarker={index > 0 && !isSectionStart}
+                      activeNoteIds={activeNoteIds}
+                      isPlaying={playingPhraseId === phrase.id}
+                      onPlayPhrase={playPhrasePreview}
+                    />
+                  </div>
+                );
+              })}
             </div>
           )}
         </section>
@@ -507,8 +669,7 @@ export default function App() {
             <label><InfoLabel label="Mood" info="The emotional color of the lyrics, such as tender, bitter, playful, haunted, euphoric, or restrained." /><input value={context.mood} onChange={(event) => setContext({ ...context, mood: event.target.value })} /></label>
             <label><InfoLabel label="Genre" info="The songwriting style to aim for, such as pop, indie folk, R&B, musical theatre, synthwave, or country." /><input value={context.genre} onChange={(event) => setContext({ ...context, genre: event.target.value })} /></label>
             <label><InfoLabel label="POV" info="The narrator perspective, such as first person I/we, second person you, or third person he/she/they." /><input value={context.pov} onChange={(event) => setContext({ ...context, pov: event.target.value })} /></label>
-            <label><InfoLabel label="Rhyme scheme" info="Which line endings should rhyme. AABB pairs lines 1-2 and 3-4; ABAB pairs 1-3 and 2-4; X means no required rhyme." /><input value={context.rhymeScheme} onChange={(event) => setContext({ ...context, rhymeScheme: event.target.value })} /></label>
-            <label><InfoLabel label="Section labels" info="Names for each phrase or line, such as verse, verse, chorus, chorus. If fewer labels are entered than lines, they repeat." /><input value={context.sectionLabels} onChange={(event) => setContext({ ...context, sectionLabels: event.target.value })} /></label>
+            <label><InfoLabel label="Rhyme scheme" info="SECTION means one rhyme family per section. You can also enter ABAB/AABB for line-by-line patterns, X for no rhyme on a slot, or FREE for no fixed labels." /><input value={context.rhymeScheme} onChange={(event) => setContext({ ...context, rhymeScheme: event.target.value })} /></label>
             <label><InfoLabel label="Must include" info="Words or phrases the generated lyrics should try to include somewhere, unless locked lines already cover them." /><input value={context.mustInclude} onChange={(event) => setContext({ ...context, mustInclude: event.target.value })} /></label>
             <label><InfoLabel label="Avoid" info="Words, images, topics, or cliches the generator should stay away from." /><input value={context.avoid} onChange={(event) => setContext({ ...context, avoid: event.target.value })} /></label>
           </div>
