@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
-import { syllableValidator } from './validators';
+import { syllableValidator, lockedWordsValidator } from './validators';
 import type { Phrase } from './types';
+import { parseLockInput } from './locks';
 
 const phrase = (syllables: number): Phrase => ({
   id: 'p',
@@ -34,5 +35,26 @@ describe('syllableValidator', () => {
   it('still fails ±2 when not strict', () => {
     const result = syllableValidator('hi there', phrase(5), { strict: false });
     expect(result).not.toBeNull();
+  });
+});
+
+describe('lockedWordsValidator', () => {
+  it('passes when locked words appear in order', () => {
+    const lock = parseLockInput('_ love _ you', 0);
+    expect(lockedWordsValidator('I love being with you', lock)).toBeNull();
+  });
+
+  it('fails when a locked word is missing', () => {
+    const lock = parseLockInput('_ love _ you', 0);
+    const result = lockedWordsValidator('I miss being with you', lock);
+    expect(result).toEqual({
+      type: 'locked-words',
+      message: expect.stringContaining('love'),
+    });
+  });
+
+  it('passes when there are no locked words', () => {
+    const lock = parseLockInput('', 0);
+    expect(lockedWordsValidator('anything goes here', lock)).toBeNull();
   });
 });
