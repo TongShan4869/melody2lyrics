@@ -872,6 +872,14 @@ export default function App() {
         <div className="panel-heading">
           <h2>Lyrics</h2>
           <div className="button-row">
+            <button
+              type="button"
+              className="ghost small"
+              disabled={!canGenerate || output.length === 0}
+              onClick={generateLyrics}
+            >
+              Revise rest
+            </button>
             <button type="button" className="ghost small" onClick={lockAll}><Lock size={15} /> Lock all</button>
             <button type="button" className="ghost small" onClick={unlockAll}><Unlock size={15} /> Unlock all</button>
             <button type="button" className="ghost small" onClick={copyLyrics}><Clipboard size={15} /> Copy</button>
