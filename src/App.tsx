@@ -9,7 +9,7 @@ import type { GeneratedLine, IterationLog, LineValidation, LockPolicy, LyricsCon
 import { runPipeline } from './agent';
 import { PhraseRow } from './components/PhraseRow';
 import { melodyDuration, schedulePreview, type PlaybackHandle } from './playback';
-import { detectSections } from './structure';
+import { detectClusters, detectSections } from './structure';
 
 const initialContext: LyricsContext = {
   theme: '',
@@ -259,6 +259,9 @@ export default function App() {
   const playbackStartTimeRef = useRef(0);
   const animationRef = useRef<number | null>(null);
 
+  const phraseClusters = useMemo(() => detectClusters(phrases), [phrases]);
+  const [recurrenceHint, setRecurrenceHint] = useState<{ startIndex: number; targets: number[]; label: string } | null>(null);
+
   const effectiveLocks = useMemo(() => locks.map((lock, index) => {
     const lockedOutput = output[index];
     if (!lockedOutput?.locked) return lock;
@@ -335,7 +338,28 @@ export default function App() {
     setSectionLabels((existing) => {
       const synced = syncSectionLabels(existing, phrases.length);
       const endIndex = sectionEndIndex(synced, startIndex, phrases.length);
-      return synced.map((label, index) => (index >= startIndex && index < endIndex ? value : label));
+      const next = synced.map((label, index) =>
+        index >= startIndex && index < endIndex ? value : label,
+      );
+
+      const clusterId = phraseClusters[startIndex];
+      if (clusterId !== undefined) {
+        const targets = phraseClusters
+          .map((id, index) => ({ id, index }))
+          .filter(({ id, index }) =>
+            id === clusterId
+            && (index < startIndex || index >= endIndex)
+            && next[index] !== value,
+          )
+          .map(({ index }) => index);
+        if (targets.length > 0) {
+          setRecurrenceHint({ startIndex, targets, label: value });
+        } else {
+          setRecurrenceHint(null);
+        }
+      }
+
+      return next;
     });
   }
 
@@ -694,6 +718,21 @@ export default function App() {
               <button type="button" className="ghost small" onClick={clearLocks}>Clear locks</button>
             </div>
           </div>
+          {recurrenceHint && (
+            <div className="recurrence-hint">
+              <span>
+                Phrase{recurrenceHint.targets.length > 1 ? 's' : ''}{' '}
+                {recurrenceHint.targets.map((t) => t + 1).join(', ')} share this melody — apply <strong>{recurrenceHint.label}</strong> there too?
+              </span>
+              <button type="button" onClick={() => {
+                setSectionLabels((existing) => existing.map((label, index) =>
+                  recurrenceHint.targets.includes(index) ? recurrenceHint.label : label,
+                ));
+                setRecurrenceHint(null);
+              }}>Apply</button>
+              <button type="button" className="ghost" onClick={() => setRecurrenceHint(null)}>Dismiss</button>
+            </div>
+          )}
           {phrases.length === 0 ? (
             <p className="empty">Upload a MIDI file to see phrase boundaries, syllable counts, stress, and line-ending direction.</p>
           ) : (

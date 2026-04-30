@@ -766,3 +766,15 @@ label {
 }
 .origin-chip.auto { background: #1f3a3a; color: #79d3d3; }
 .origin-chip.manual { background: #3a1f3a; color: #d379d3; }
+
+.recurrence-hint {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  background: #1f1f2a;
+  border: 1px solid #2a2a40;
+  border-radius: 8px;
+  padding: 10px 14px;
+  margin: 8px 0;
+}
+.recurrence-hint button { font-size: 0.9em; }

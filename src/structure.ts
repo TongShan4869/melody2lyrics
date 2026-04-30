@@ -59,22 +59,29 @@ export function phraseSimilarity(a: Phrase, b: Phrase): number {
 
 const SIMILARITY_THRESHOLD = 0.85;
 
-export function detectSections(phrases: Phrase[]): string[] {
+export function detectClusters(phrases: Phrase[]): number[] {
   if (phrases.length === 0) return [];
-
   const clusterId = new Array(phrases.length).fill(-1);
-  let nextCluster = 0;
+  let next = 0;
   for (let i = 0; i < phrases.length; i += 1) {
     if (clusterId[i] !== -1) continue;
-    clusterId[i] = nextCluster;
+    clusterId[i] = next;
     for (let j = i + 1; j < phrases.length; j += 1) {
       if (clusterId[j] !== -1) continue;
       if (phraseSimilarity(phrases[i], phrases[j]) >= SIMILARITY_THRESHOLD) {
-        clusterId[j] = nextCluster;
+        clusterId[j] = next;
       }
     }
-    nextCluster += 1;
+    next += 1;
   }
+  return clusterId;
+}
+
+export function detectSections(phrases: Phrase[]): string[] {
+  if (phrases.length === 0) return [];
+
+  const clusterId = detectClusters(phrases);
+  const nextCluster = clusterId.length > 0 ? Math.max(...clusterId) + 1 : 0;
 
   const clusterSize = new Array(nextCluster).fill(0);
   for (const id of clusterId) clusterSize[id] += 1;
