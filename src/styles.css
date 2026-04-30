@@ -734,3 +734,23 @@ label {
   font-style: italic;
   margin: 0;
 }
+
+.line-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  font-weight: 700;
+  font-size: 0.85em;
+  margin-right: 8px;
+}
+.line-badge.pass {
+  background: #1f3a1f;
+  color: #6cd76c;
+}
+.line-badge.warn {
+  background: #3a2f1f;
+  color: #f5d36a;
+}

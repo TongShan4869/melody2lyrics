@@ -843,6 +843,14 @@ export default function App() {
                 <button type="button" className="icon-button" onClick={() => toggleOutputLock(index)} title={line.locked ? 'Unlock line' : 'Lock line'}>
                   {line.locked ? <Lock size={16} /> : <Unlock size={16} />}
                 </button>
+                {line.validation && (
+                  <span
+                    className={`line-badge ${line.validation.passed ? 'pass' : 'warn'}`}
+                    title={line.validation.failures.map((f) => f.message).join('; ') || 'passed'}
+                  >
+                    {line.validation.passed ? '✓' : '!'}
+                  </span>
+                )}
                 <input value={line.text} onChange={(event) => updateOutputLine(index, event.target.value)} />
                 <span className="mono">{phrases[index]?.stressPattern}</span>
                 {line.validation && !line.validation.passed && (
