@@ -1,4 +1,4 @@
-import type { Phrase, ValidationFailure, PhraseLockState } from './types';
+import type { Phrase, ValidationFailure, PhraseLockState, LineValidation, LyricsContext } from './types';
 import { countSyllables } from './syllables';
 import { validateLockedWords } from './locks';
 import { DEFAULT_FILLER_END_WORDS } from './prompt';
@@ -129,4 +129,35 @@ export function avoidWordsValidator(
     }
   }
   return null;
+}
+
+export function validateLines(
+  lines: string[],
+  phrases: Phrase[],
+  locks: PhraseLockState[],
+  sectionLabels: string[],
+  context: LyricsContext,
+): LineValidation[] {
+  return lines.map((line, index) => {
+    const phrase = phrases[index];
+    const lock = locks[index];
+    const failures: ValidationFailure[] = [];
+    const push = (failure: ValidationFailure | null) => {
+      if (failure) failures.push(failure);
+    };
+
+    if (phrase) push(syllableValidator(line, phrase, { strict: context.strictSyllables }));
+    if (lock) push(lockedWordsValidator(line, lock));
+    push(endCollisionValidator(lines, sectionLabels, index));
+    push(fillerEndingValidator(line, context.mustInclude));
+    if (phrase) push(heldVowelValidator(line, phrase));
+    push(avoidWordsValidator(line, context.avoid));
+
+    return {
+      index,
+      text: line,
+      passed: failures.length === 0,
+      failures,
+    };
+  });
 }

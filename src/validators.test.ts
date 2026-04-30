@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { syllableValidator, lockedWordsValidator, endCollisionValidator, fillerEndingValidator, heldVowelValidator, avoidWordsValidator } from './validators';
-import type { Phrase } from './types';
+import { syllableValidator, lockedWordsValidator, endCollisionValidator, fillerEndingValidator, heldVowelValidator, avoidWordsValidator, validateLines } from './validators';
+import type { Phrase, LyricsContext, PhraseLockState } from './types';
 import { parseLockInput } from './locks';
 
 const phrase = (syllables: number): Phrase => ({
@@ -175,5 +175,49 @@ describe('avoidWordsValidator', () => {
 
   it('is case-insensitive and accepts whitespace separators', () => {
     expect(avoidWordsValidator('Chasing NEON dreams', 'neon dreams')?.type).toBe('avoid');
+  });
+});
+
+describe('validateLines', () => {
+  it('aggregates failures per line', () => {
+    const ctx: LyricsContext = {
+      theme: '', mood: '', genre: '', pov: '', otherNotes: '',
+      mustInclude: '', avoid: '', rhymeScheme: 'SECTION', strictSyllables: true,
+    };
+
+    const phrases: Phrase[] = [
+      { id: 'p1', notes: [], syllables: 5, stressPattern: '', endingDirection: 'level', startTime: 0, endTime: 0 },
+      { id: 'p2', notes: [], syllables: 5, stressPattern: '', endingDirection: 'level', startTime: 0, endTime: 0 },
+    ];
+    const locks: PhraseLockState[] = [parseLockInput('', 0), parseLockInput('', 1)];
+    const sections = ['Verse 1', 'Verse 1'];
+    const lines = ['hello world tonight', 'shining bright tonight'];
+
+    const result = validateLines(lines, phrases, locks, sections, ctx);
+
+    expect(result).toHaveLength(2);
+    expect(result[0].passed).toBe(false);
+    expect(result[1].passed).toBe(false);
+    const types1 = result[1].failures.map((f) => f.type).sort();
+    expect(types1).toContain('end-collision');
+    expect(types1).toContain('filler');
+  });
+
+  it('marks passing lines as passed', () => {
+    const ctx: LyricsContext = {
+      theme: '', mood: '', genre: '', pov: '', otherNotes: '',
+      mustInclude: '', avoid: '', rhymeScheme: 'SECTION', strictSyllables: true,
+    };
+
+    const phrases: Phrase[] = [
+      { id: 'p1', notes: [], syllables: 5, stressPattern: '', endingDirection: 'level', startTime: 0, endTime: 0 },
+    ];
+    const locks: PhraseLockState[] = [parseLockInput('', 0)];
+    const sections = ['Verse 1'];
+    const lines = ['I will see you soon'];
+
+    const result = validateLines(lines, phrases, locks, sections, ctx);
+    expect(result[0].passed).toBe(true);
+    expect(result[0].failures).toEqual([]);
   });
 });
