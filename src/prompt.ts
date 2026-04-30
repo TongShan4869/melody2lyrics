@@ -1,6 +1,11 @@
 import type { LyricsContext, Phrase, PhraseLockState } from './types';
 import { isFullyLocked, lockedWordsWithPositions, lockTemplate } from './locks';
 
+export const DEFAULT_FILLER_END_WORDS = [
+  'light', 'night', 'tonight', 'fire', 'higher',
+  'sky', 'shine', 'bright', 'ignite',
+] as const;
+
 export function buildPrompt(phrases: Phrase[], locks: PhraseLockState[], context: LyricsContext, sectionLabels: string[] = []): string {
   const sections = fillSectionLabels(sectionLabels, phrases.length);
   const sectionRhymeMode = isSectionRhymeMode(context.rhymeScheme);
@@ -32,6 +37,8 @@ export function buildPrompt(phrases: Phrase[], locks: PhraseLockState[], context
 
     return `${header}\n  Template: ${lockTemplate(lock, phrase.syllables)}\n  Locked words: ${lockedWords || 'none'}${mismatch}`;
   });
+
+  const fillerList = DEFAULT_FILLER_END_WORDS.join(', ');
 
   return `You are writing singable English lyrics to fit an existing melody.
 
@@ -66,7 +73,7 @@ LYRIC QUALITY CHECK
 - Do not repeat a full lyric line unless it is locked or explicitly requested.
 - Avoid reusing the same final word across multiple lines; vary line endings even inside the same rhyme family.
 - Prefer near rhymes and internal rhymes when exact end rhyme would sound forced.
-- Avoid default filler rhyme words such as light, night, tonight, fire, higher, sky, shine, bright, and ignite unless the user specifically requested them.
+- Avoid default filler rhyme words such as ${fillerList} unless the user specifically requested them.
 - Make each section do a different job: chorus can be hooky, rap can be more rhythmic and concrete, pre-chorus should build momentum.
 - Before returning, silently revise any line that feels generic, slogan-like, or only exists to complete a rhyme.
 
