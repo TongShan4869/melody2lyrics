@@ -9,6 +9,7 @@ import type { GeneratedLine, IterationLog, LineValidation, LockPolicy, LyricsCon
 import { runPipeline } from './agent';
 import { PhraseRow } from './components/PhraseRow';
 import { melodyDuration, schedulePreview, type PlaybackHandle } from './playback';
+import { detectSections } from './structure';
 
 const initialContext: LyricsContext = {
   theme: '',
@@ -309,7 +310,7 @@ export default function App() {
       setNotes(parsed.notes);
       setPhrases(analyzed);
       setLocks(analyzed.map((_, index) => parseLockInput('', index)));
-      setSectionLabels(defaultSectionLabels(analyzed.length));
+      setSectionLabels(detectSections(analyzed));
       setOutput([]);
       setPlayheadTime(0);
       setPreviewStartTime(0);
