@@ -1,4 +1,4 @@
-import type { LyricsContext, Phrase, PhraseLockState } from './types';
+import type { LineValidation, LyricsContext, Phrase, PhraseLockState } from './types';
 import { isFullyLocked, lockedWordsWithPositions, lockTemplate } from './locks';
 
 export const DEFAULT_FILLER_END_WORDS = [
@@ -151,4 +151,54 @@ function policyInstruction(policy: PhraseLockState['policy'], current: number, t
   if (policy === 'pad') return `locked content has ${current}/${target} syllables; add natural words around locked content until the line fits.`;
   if (policy === 'auto') return `locked content has ${current}/${target} syllables; decide whether trimming or padding creates the most singable line.`;
   return `strict mismatch: do not generate this line until the user fixes the template.`;
+}
+
+export type RevisionPromptInput = {
+  phrases: Phrase[];
+  locks: PhraseLockState[];
+  sectionLabels: string[];
+  context: LyricsContext;
+  currentLines: string[];
+  validations: LineValidation[];
+  previousAttempts: Map<number, string[]>;
+};
+
+export function buildRevisionPrompt(input: RevisionPromptInput): string {
+  const failingIndices = input.validations
+    .filter((v) => !v.passed)
+    .map((v) => v.index);
+
+  const initialPrompt = buildPrompt(input.phrases, input.locks, input.context, input.sectionLabels);
+
+  const currentBlock = input.currentLines
+    .map((line, index) => {
+      const validation = input.validations[index];
+      const tag = validation && !validation.passed ? '[FAILING]' : '[KEEP]';
+      return `Line ${index + 1} ${tag}: ${line}`;
+    })
+    .join('\n');
+
+  const failingDetail = failingIndices.map((index) => {
+    const validation = input.validations[index];
+    const reasons = validation.failures.map((f) => `    - ${f.message}`).join('\n');
+    const prior = input.previousAttempts.get(index) ?? [];
+    const priorBlock = prior.length
+      ? `\n  Previous attempts (do not repeat):\n${prior.map((p) => `    - "${p}"`).join('\n')}\n  Try a different direction.`
+      : '';
+    return `Line ${index + 1} (${input.phrases[index]?.syllables ?? '?'} syllables, stress = ${input.phrases[index]?.stressPattern ?? ''}):\n${reasons}${priorBlock}`;
+  }).join('\n\n');
+
+  return `${initialPrompt}
+
+REVISION TASK
+You produced the lines below. Some failed mechanical checks.
+REWRITE ONLY the lines marked [FAILING]. Keep [KEEP] lines verbatim.
+Return ${input.currentLines.length} numbered lines, in order.
+
+CURRENT DRAFT
+${currentBlock}
+
+FAILURES
+${failingDetail || '(none)'}
+`;
 }
