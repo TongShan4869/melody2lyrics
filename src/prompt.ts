@@ -40,7 +40,9 @@ Theme: ${context.theme || 'open'}
 Mood: ${context.mood || 'open'}
 Genre: ${context.genre || 'open'}
 Point of view: ${context.pov || 'open'}
-Rhyme approach: ${rhymePlan} Prefer slant rhyme, internal rhyme, assonance, consonance, and rhythmic echoes over exact repeated end words.
+RHYME PLAN: ${rhymePlan}
+- Use rhyme as a section identity, not as repeated filler endings.
+- Prefer slant rhyme, internal rhyme, assonance, consonance, and rhythmic echoes over exact repeated end words.
 Must include: ${context.mustInclude || 'none'}
 Avoid: ${context.avoid || 'none'}
 
@@ -55,7 +57,7 @@ RULES
 5. Preserve stress: strong syllables should land on S positions where possible.
 6. Fit note duration: short syllables need quick, crisp sounds; held syllables need stretchable vowels or singable words that can sustain naturally.
 7. Avoid cramming consonant-heavy words onto fast notes or tiny filler words onto held notes.
-8. ${sectionRhymeMode ? 'Keep one coherent rhyme family per section, and use a different rhyme family for a different section unless repetition is clearly intentional.' : 'Follow rhyme labels within each section through rhyme families: lines with the same label should feel sonically connected, but should not reuse the same final word.'}
+8. ${sectionRhymeMode ? 'For each section, silently choose a specific rhyme family before writing, then keep that section sonically connected without reusing the same final word.' : 'Follow rhyme labels within each section through rhyme families: lines with the same label should feel sonically connected, but should not reuse the same final word.'}
 9. Do not add explanations before or after the lyrics.
 
 LYRIC QUALITY CHECK
@@ -106,10 +108,10 @@ export function sectionRhymeLabels(raw: string, sections: string[]): string[] {
 export function sectionRhymePlan(sections: string[]): string {
   const uniqueSections = [...new Set(sections.filter(Boolean))];
   if (uniqueSections.length === 0) {
-    return 'Choose one rhyme family for the whole song section.';
+    return 'Choose one explicit rhyme family for the whole song section.';
   }
 
-  return `Choose one rhyme family per section (${uniqueSections.join(', ')}). For example, one chorus may orbit an "-tion" sound while a rap verse may orbit an "-ee" sound.`;
+  return `Choose one explicit rhyme family per section (${uniqueSections.join(', ')}). Example: Chorus 1 can orbit "-tion/-motion" while Rap verse 1 can orbit "-ee/-ing"; each section should have its own sonic lane.`;
 }
 
 function isSectionRhymeMode(raw: string): boolean {

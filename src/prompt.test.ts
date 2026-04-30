@@ -53,7 +53,7 @@ describe('prompt builder', () => {
   it('supports one rhyme family per section', () => {
     expect(rhymeLabels('SECTION', 3)).toEqual(['', '', '']);
     expect(sectionRhymeLabels('SECTION', ['Verse 1', 'Chorus 1'])).toEqual(['', '']);
-    expect(sectionRhymePlan(['Rap verse 1', 'Rap verse 1', 'Chorus 1'])).toContain('one rhyme family per section');
+    expect(sectionRhymePlan(['Rap verse 1', 'Rap verse 1', 'Chorus 1'])).toContain('one explicit rhyme family per section');
   });
 
   it('includes lyric quality guardrails against repeated filler endings', () => {
@@ -62,8 +62,8 @@ describe('prompt builder', () => {
     expect(prompt).toContain('LYRIC QUALITY CHECK');
     expect(prompt).toContain('rhythm = short-short-held');
     expect(prompt).toContain('Fit note duration');
-    expect(prompt).toContain('Rhyme approach: Choose one rhyme family per section');
-    expect(prompt).toContain('Keep one coherent rhyme family per section');
+    expect(prompt).toContain('RHYME PLAN: Choose one explicit rhyme family per section');
+    expect(prompt).toContain('silently choose a specific rhyme family before writing');
     expect(prompt).toContain('Do not repeat a full lyric line');
     expect(prompt).toContain('Avoid reusing the same final word');
     expect(prompt).toContain('Prefer near rhymes and internal rhymes');

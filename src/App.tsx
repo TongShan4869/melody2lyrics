@@ -24,6 +24,7 @@ const initialContext: LyricsContext = {
 const sectionOptions = ['Intro', 'Verse', 'Rap verse', 'Pre-chorus', 'Chorus', 'Post-chorus', 'Rap break', 'Bridge', 'Outro', 'Ad-lib'];
 const sectionRepeatOptions = ['', '1', '2', '3', '4', '5', '6', '7', '8', '9', '10', '11', '12'];
 const CUSTOM_SECTION = '__custom_section__';
+const CUSTOM_RHYME = '__custom_rhyme__';
 
 type LlmProvider = 'openai' | 'anthropic' | 'deepseek';
 const CUSTOM_MODEL = '__custom__';
@@ -89,6 +90,12 @@ function nextSectionLabel(label: string): string {
   const type = parsed.type || 'Section';
   const repeat = Number.parseInt(parsed.repeat || '1', 10);
   return formatSectionLabel(type, String(Number.isFinite(repeat) ? repeat + 1 : 2));
+}
+
+function rhymeModeValue(rhymeScheme: string): string {
+  const normalized = rhymeScheme.trim().toUpperCase();
+  if (normalized === 'SECTION' || normalized === 'FREE') return normalized;
+  return CUSTOM_RHYME;
 }
 
 function syncSectionLabels(existing: string[], count: number): string[] {
@@ -669,7 +676,29 @@ export default function App() {
             <label><InfoLabel label="Mood" info="The emotional color of the lyrics, such as tender, bitter, playful, haunted, euphoric, or restrained." /><input value={context.mood} onChange={(event) => setContext({ ...context, mood: event.target.value })} /></label>
             <label><InfoLabel label="Genre" info="The songwriting style to aim for, such as pop, indie folk, R&B, musical theatre, synthwave, or country." /><input value={context.genre} onChange={(event) => setContext({ ...context, genre: event.target.value })} /></label>
             <label><InfoLabel label="POV" info="The narrator perspective, such as first person I/we, second person you, or third person he/she/they." /><input value={context.pov} onChange={(event) => setContext({ ...context, pov: event.target.value })} /></label>
-            <label><InfoLabel label="Rhyme scheme" info="SECTION means one rhyme family per section. You can also enter ABAB/AABB for line-by-line patterns, X for no rhyme on a slot, or FREE for no fixed labels." /><input value={context.rhymeScheme} onChange={(event) => setContext({ ...context, rhymeScheme: event.target.value })} /></label>
+            <label className="rhyme-control">
+              <InfoLabel label="Rhyme mode" info="Section rhyme families means each section gets one shared sound family, such as a chorus around -tion and a rap verse around -ee." />
+              <select
+                value={rhymeModeValue(context.rhymeScheme)}
+                onChange={(event) => {
+                  const nextValue = event.target.value;
+                  setContext({ ...context, rhymeScheme: nextValue === CUSTOM_RHYME ? 'ABAB' : nextValue });
+                }}
+              >
+                <option value="SECTION">Section rhyme families</option>
+                <option value={CUSTOM_RHYME}>Line pattern, e.g. ABAB</option>
+                <option value="FREE">No fixed rhyme</option>
+              </select>
+              {rhymeModeValue(context.rhymeScheme) === CUSTOM_RHYME && (
+                <input
+                  aria-label="Line rhyme pattern"
+                  placeholder="ABAB, AABB, AXAX"
+                  value={context.rhymeScheme}
+                  onChange={(event) => setContext({ ...context, rhymeScheme: event.target.value })}
+                />
+              )}
+              <span className="field-help">Default: one rhyme sound per section. Use a line pattern only when you want labels like A/B per line; X means no rhyme for that slot.</span>
+            </label>
             <label><InfoLabel label="Must include" info="Words or phrases the generated lyrics should try to include somewhere, unless locked lines already cover them." /><input value={context.mustInclude} onChange={(event) => setContext({ ...context, mustInclude: event.target.value })} /></label>
             <label><InfoLabel label="Avoid" info="Words, images, topics, or cliches the generator should stay away from." /><input value={context.avoid} onChange={(event) => setContext({ ...context, avoid: event.target.value })} /></label>
           </div>
