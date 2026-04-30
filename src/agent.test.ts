@@ -98,3 +98,30 @@ describe('runPipeline revision loop', () => {
     expect(log.iterations[0].output[0]).toBe('pinned line one');
   });
 });
+
+describe('runPipeline abort', () => {
+  it('returns error status when llmCall throws AbortError', async () => {
+    const phrases = [phrase(3, 'a')];
+    const locks: PhraseLockState[] = [parseLockInput('', 0)];
+    const sectionLabels = ['Verse 1'];
+    const controller = new AbortController();
+    controller.abort();
+    const input: PipelineInput = {
+      phrases, locks, sectionLabels, context: ctx,
+      pinnedLines: new Map(),
+      llmCall: async (_prompt, signal) => {
+        if (signal?.aborted) {
+          const err = new Error('aborted');
+          err.name = 'AbortError';
+          throw err;
+        }
+        return '';
+      },
+      signal: controller.signal,
+    };
+    const { result } = await consume(runPipeline(input));
+    const log = result as IterationLog;
+    expect(log.finalStatus).toBe('error');
+    expect(log.errorMessage).toContain('aborted');
+  });
+});
