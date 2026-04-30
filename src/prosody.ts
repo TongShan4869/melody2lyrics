@@ -161,6 +161,15 @@ function splitOversizedPhrase(notes: Note[]): Note[][] {
 }
 
 function isStrongLineStart(note: Note, phraseStart: Note, estimatedBeat: number): boolean {
+  if (note.ticks != null && note.ppq != null && note.ppq > 0) {
+    const [numerator, denominator] = note.timeSignature ?? [4, 4];
+    const ticksPerBeat = note.ppq * (4 / denominator);
+    const ticksPerBar = ticksPerBeat * numerator;
+    const tickInBar = positiveModulo(note.ticks, ticksPerBar);
+    const beatInBar = Math.round(tickInBar / ticksPerBeat);
+    const aligned = Math.abs(tickInBar - beatInBar * ticksPerBeat) < ticksPerBeat * 0.1;
+    return aligned && beatInBar === 0;
+  }
   return metricStress(note, phraseStart, estimatedBeat) >= STRONG_STRESS_THRESHOLD;
 }
 

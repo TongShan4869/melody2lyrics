@@ -117,3 +117,24 @@ describe('prosody analysis', () => {
     expect(merged[0].notes.map((item) => item.id)).toEqual(['1', '2', '3']);
   });
 });
+
+describe('analyzeNotes downbeat snap', () => {
+  it('prefers splitting an oversized phrase at a metric downbeat', () => {
+    const notes: Note[] = Array.from({ length: 24 }, (_, i) => ({
+      id: `n${i}`,
+      midi: 60 + (i % 5),
+      pitch: 'C4',
+      time: i * 0.25,
+      duration: 0.25,
+      velocity: 0.8,
+      ticks: i * 480,
+      durationTicks: 480,
+      ppq: 480,
+      timeSignature: [4, 4] as [number, number],
+    }));
+    const phrases = analyzeNotes(notes);
+    expect(phrases.length).toBeGreaterThanOrEqual(2);
+    const firstLength = phrases[0].notes.length;
+    expect(firstLength % 4).toBe(0);
+  });
+});
