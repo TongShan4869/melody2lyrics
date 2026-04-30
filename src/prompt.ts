@@ -1,5 +1,10 @@
-import type { LyricsContext, Phrase, PhraseLockState } from './types';
+import type { LineValidation, LyricsContext, Phrase, PhraseLockState } from './types';
 import { isFullyLocked, lockedWordsWithPositions, lockTemplate } from './locks';
+
+export const DEFAULT_FILLER_END_WORDS = [
+  'light', 'night', 'tonight', 'fire', 'higher',
+  'sky', 'shine', 'bright', 'ignite',
+] as const;
 
 export function buildPrompt(phrases: Phrase[], locks: PhraseLockState[], context: LyricsContext, sectionLabels: string[] = []): string {
   const sections = fillSectionLabels(sectionLabels, phrases.length);
@@ -32,6 +37,8 @@ export function buildPrompt(phrases: Phrase[], locks: PhraseLockState[], context
 
     return `${header}\n  Template: ${lockTemplate(lock, phrase.syllables)}\n  Locked words: ${lockedWords || 'none'}${mismatch}`;
   });
+
+  const fillerList = DEFAULT_FILLER_END_WORDS.join(', ');
 
   return `You are writing singable English lyrics to fit an existing melody.
 
@@ -66,7 +73,7 @@ LYRIC QUALITY CHECK
 - Do not repeat a full lyric line unless it is locked or explicitly requested.
 - Avoid reusing the same final word across multiple lines; vary line endings even inside the same rhyme family.
 - Prefer near rhymes and internal rhymes when exact end rhyme would sound forced.
-- Avoid default filler rhyme words such as light, night, tonight, fire, higher, sky, shine, bright, and ignite unless the user specifically requested them.
+- Avoid default filler rhyme words such as ${fillerList} unless the user specifically requested them.
 - Make each section do a different job: chorus can be hooky, rap can be more rhythmic and concrete, pre-chorus should build momentum.
 - Before returning, silently revise any line that feels generic, slogan-like, or only exists to complete a rhyme.
 
@@ -144,4 +151,54 @@ function policyInstruction(policy: PhraseLockState['policy'], current: number, t
   if (policy === 'pad') return `locked content has ${current}/${target} syllables; add natural words around locked content until the line fits.`;
   if (policy === 'auto') return `locked content has ${current}/${target} syllables; decide whether trimming or padding creates the most singable line.`;
   return `strict mismatch: do not generate this line until the user fixes the template.`;
+}
+
+export type RevisionPromptInput = {
+  phrases: Phrase[];
+  locks: PhraseLockState[];
+  sectionLabels: string[];
+  context: LyricsContext;
+  currentLines: string[];
+  validations: LineValidation[];
+  previousAttempts: Map<number, string[]>;
+};
+
+export function buildRevisionPrompt(input: RevisionPromptInput): string {
+  const failingIndices = input.validations
+    .filter((v) => !v.passed)
+    .map((v) => v.index);
+
+  const initialPrompt = buildPrompt(input.phrases, input.locks, input.context, input.sectionLabels);
+
+  const currentBlock = input.currentLines
+    .map((line, index) => {
+      const validation = input.validations[index];
+      const tag = validation && !validation.passed ? '[FAILING]' : '[KEEP]';
+      return `Line ${index + 1} ${tag}: ${line}`;
+    })
+    .join('\n');
+
+  const failingDetail = failingIndices.map((index) => {
+    const validation = input.validations[index];
+    const reasons = validation.failures.map((f) => `    - ${f.message}`).join('\n');
+    const prior = input.previousAttempts.get(index) ?? [];
+    const priorBlock = prior.length
+      ? `\n  Previous attempts (do not repeat):\n${prior.map((p) => `    - "${p}"`).join('\n')}\n  Try a different direction.`
+      : '';
+    return `Line ${index + 1} (${input.phrases[index]?.syllables ?? '?'} syllables, stress = ${input.phrases[index]?.stressPattern ?? ''}):\n${reasons}${priorBlock}`;
+  }).join('\n\n');
+
+  return `${initialPrompt}
+
+REVISION TASK
+You produced the lines below. Some failed mechanical checks.
+REWRITE ONLY the lines marked [FAILING]. Keep [KEEP] lines verbatim.
+Return ${input.currentLines.length} numbered lines, in order.
+
+CURRENT DRAFT
+${currentBlock}
+
+FAILURES
+${failingDetail || '(none)'}
+`;
 }

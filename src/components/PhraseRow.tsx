@@ -1,10 +1,11 @@
 import { Flag, Pause, Play, Split, Scissors } from 'lucide-react';
-import type { Phrase, PhraseLockState, LockPolicy } from '../types';
+import type { Phrase, PhraseLockState, LockPolicy, PhraseOrigin } from '../types';
 import { LockInput } from './LockInput';
 
 type Props = {
   phrase: Phrase;
   index: number;
+  origin: PhraseOrigin;
   lock: PhraseLockState;
   onLockInputChange: (index: number, value: string) => void;
   onPolicyChange: (index: number, policy: LockPolicy) => void;
@@ -22,6 +23,7 @@ type Props = {
 export function PhraseRow({
   phrase,
   index,
+  origin,
   lock,
   onLockInputChange,
   onPolicyChange,
@@ -42,6 +44,7 @@ export function PhraseRow({
       <div className="phrase-meta">
         <div>
           <span className="eyebrow">Line {index + 1}</span>
+          <span className={`origin-chip ${origin}`}>{origin}</span>
           <h3>{phrase.syllables} syllables</h3>
         </div>
         <div className="mono">{phrase.stressPattern}</div>

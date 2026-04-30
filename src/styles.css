@@ -635,8 +635,12 @@ label {
 
 .output-line {
   display: grid;
-  grid-template-columns: 38px minmax(0, 1fr) auto;
-  gap: 10px;
+  grid-template-columns: 38px 28px minmax(0, 1fr);
+  grid-template-areas:
+    "lock badge input"
+    ".    .     stress"
+    ".    .     errors";
+  gap: 8px 10px;
   border: 1px solid var(--color-border);
   border-radius: 8px;
   padding: 10px;
@@ -647,9 +651,21 @@ label {
   border-color: var(--color-danger);
 }
 
+.output-line .icon-button { grid-area: lock; }
+.output-line .line-badge { grid-area: badge; margin-right: 0; }
+.output-line input { grid-area: input; min-width: 0; }
+.output-line .mono {
+  grid-area: stress;
+  font-size: 0.78em;
+  color: var(--color-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
 .output-line small {
-  grid-column: 2 / -1;
+  grid-area: errors;
   color: var(--color-danger);
+  font-size: 0.85em;
 }
 
 .icon-button {
@@ -693,3 +709,88 @@ label {
     width: fit-content;
   }
 }
+
+.iteration-log {
+  margin: 12px 0;
+  border: 1px solid #2a2a2a;
+  border-radius: 8px;
+  background: #161616;
+}
+.iteration-log-header {
+  display: flex;
+  justify-content: space-between;
+  width: 100%;
+  padding: 10px 14px;
+  background: transparent;
+  color: #ffb6c1;
+  border: 0;
+  font-weight: 600;
+  cursor: pointer;
+}
+.iteration-log-body {
+  padding: 6px 14px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.iteration-entry {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 0.92em;
+  color: #d8d8d8;
+}
+.iteration-failure {
+  color: #f5d36a;
+  padding-left: 12px;
+  font-size: 0.9em;
+}
+.iteration-final {
+  color: #9aa0a6;
+  font-style: italic;
+  margin: 0;
+}
+
+.line-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  font-weight: 700;
+  font-size: 0.85em;
+  margin-right: 8px;
+}
+.line-badge.pass {
+  background: #1f3a1f;
+  color: #6cd76c;
+}
+.line-badge.warn {
+  background: #3a2f1f;
+  color: #f5d36a;
+}
+
+.origin-chip {
+  display: inline-block;
+  font-size: 0.7em;
+  padding: 2px 6px;
+  border-radius: 999px;
+  margin-left: 6px;
+  text-transform: lowercase;
+  letter-spacing: 0.04em;
+}
+.origin-chip.auto { background: #1f3a3a; color: #79d3d3; }
+.origin-chip.manual { background: #3a1f3a; color: #d379d3; }
+
+.recurrence-hint {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  background: #1f1f2a;
+  border: 1px solid #2a2a40;
+  border-radius: 8px;
+  padding: 10px 14px;
+  margin: 8px 0;
+}
+.recurrence-hint button { font-size: 0.9em; }

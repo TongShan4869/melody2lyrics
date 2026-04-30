@@ -3,11 +3,13 @@ import { Clipboard, Download, FileMusic, Lock, Pause, Play, Unlock, Wand2, XCirc
 import { parseMidiFile } from './midi';
 import { analyzeNotes, mergePhrases, splitPhrase } from './prosody';
 import { buildPrompt } from './prompt';
-import { parseLockInput, validateLockedWords } from './locks';
+import { parseLockInput } from './locks';
 import { generateWithAnthropic, generateWithDeepSeek, generateWithOpenAI } from './llm';
-import type { GeneratedLine, LockPolicy, LyricsContext, MidiFileInfo, Note, Phrase, PhraseLockState } from './types';
+import type { GeneratedLine, IterationLog, LineValidation, LockPolicy, LyricsContext, MidiFileInfo, Note, Phrase, PhraseLockState, PhraseOrigin } from './types';
+import { runPipeline } from './agent';
 import { PhraseRow } from './components/PhraseRow';
 import { melodyDuration, schedulePreview, type PlaybackHandle } from './playback';
+import { detectClusters, detectSections } from './structure';
 
 const initialContext: LyricsContext = {
   theme: '',
@@ -187,6 +189,44 @@ function InfoLabel({ label, info }: { label: string; info: string }) {
   );
 }
 
+function IterationLogPanel({ log }: { log: IterationLog }) {
+  const [expanded, setExpanded] = useState(true);
+  if (log.iterations.length === 0 && log.finalStatus === 'idle') return null;
+
+  return (
+    <div className="iteration-log">
+      <button type="button" className="iteration-log-header" onClick={() => setExpanded(!expanded)}>
+        <span>Iteration log</span>
+        <span className="mono">{log.iterations.length} iter · {log.finalStatus}</span>
+      </button>
+      {expanded && (
+        <div className="iteration-log-body">
+          {log.iterations.map((iteration) => {
+            const passed = iteration.validations.filter((v) => v.passed).length;
+            const total = iteration.validations.length;
+            return (
+              <div key={iteration.number} className="iteration-entry">
+                <strong>Iter {iteration.number} · {iteration.kind} · {passed}/{total} passed</strong>
+                {iteration.failingIndices.map((index) => {
+                  const validation = iteration.validations[index];
+                  return (
+                    <div key={index} className="iteration-failure">
+                      Line {index + 1} — {validation.failures.map((f) => f.message).join('; ')}
+                    </div>
+                  );
+                })}
+              </div>
+            );
+          })}
+          {log.finalStatus === 'capped' && <p className="iteration-final">Stopped: hit iteration cap with unresolved lines.</p>}
+          {log.finalStatus === 'clean' && <p className="iteration-final">Stopped: clean.</p>}
+          {log.finalStatus === 'error' && <p className="iteration-final">Stopped: {log.errorMessage}</p>}
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function App() {
   const [fileName, setFileName] = useState('');
   const [midiInfo, setMidiInfo] = useState<MidiFileInfo | null>(null);
@@ -194,6 +234,7 @@ export default function App() {
   const [phrases, setPhrases] = useState<Phrase[]>([]);
   const [locks, setLocks] = useState<PhraseLockState[]>([]);
   const [sectionLabels, setSectionLabels] = useState<string[]>([]);
+  const [phraseOrigins, setPhraseOrigins] = useState<PhraseOrigin[]>([]);
   const [context, setContext] = useState<LyricsContext>(initialContext);
   const [llmProvider, setLlmProvider] = useState<LlmProvider>('openai');
   const [apiKey, setApiKey] = useState('');
@@ -203,6 +244,7 @@ export default function App() {
   const [customModel, setCustomModel] = useState('');
   const [promptVisible, setPromptVisible] = useState(true);
   const [output, setOutput] = useState<GeneratedLine[]>([]);
+  const [iterationLog, setIterationLog] = useState<IterationLog>({ iterations: [], finalStatus: 'idle' });
   const [error, setError] = useState('');
   const [copyStatus, setCopyStatus] = useState('');
   const [isGenerating, setIsGenerating] = useState(false);
@@ -216,6 +258,9 @@ export default function App() {
   const playbackRef = useRef<PlaybackHandle | null>(null);
   const playbackStartTimeRef = useRef(0);
   const animationRef = useRef<number | null>(null);
+
+  const phraseClusters = useMemo(() => detectClusters(phrases), [phrases]);
+  const [recurrenceHint, setRecurrenceHint] = useState<{ startIndex: number; targets: number[]; label: string } | null>(null);
 
   const effectiveLocks = useMemo(() => locks.map((lock, index) => {
     const lockedOutput = output[index];
@@ -269,7 +314,8 @@ export default function App() {
       setNotes(parsed.notes);
       setPhrases(analyzed);
       setLocks(analyzed.map((_, index) => parseLockInput('', index)));
-      setSectionLabels(defaultSectionLabels(analyzed.length));
+      setSectionLabels(detectSections(analyzed));
+      setPhraseOrigins(analyzed.map(() => 'auto'));
       setOutput([]);
       setPlayheadTime(0);
       setPreviewStartTime(0);
@@ -281,17 +327,39 @@ export default function App() {
     }
   }
 
-  function updatePhrases(nextPhrases: Phrase[], nextSectionLabels?: string[]) {
+  function updatePhrases(nextPhrases: Phrase[], nextSectionLabels?: string[], nextOrigins?: PhraseOrigin[]) {
     setPhrases(nextPhrases);
     setLocks((existing) => nextPhrases.map((_, index) => existing[index] ?? parseLockInput('', index)));
     setSectionLabels((existing) => syncSectionLabels(nextSectionLabels ?? existing, nextPhrases.length));
+    setPhraseOrigins(nextOrigins ?? nextPhrases.map(() => 'manual'));
   }
 
   function handleSectionMarkerChange(startIndex: number, value: string) {
     setSectionLabels((existing) => {
       const synced = syncSectionLabels(existing, phrases.length);
       const endIndex = sectionEndIndex(synced, startIndex, phrases.length);
-      return synced.map((label, index) => (index >= startIndex && index < endIndex ? value : label));
+      const next = synced.map((label, index) =>
+        index >= startIndex && index < endIndex ? value : label,
+      );
+
+      const clusterId = phraseClusters[startIndex];
+      if (clusterId !== undefined) {
+        const targets = phraseClusters
+          .map((id, index) => ({ id, index }))
+          .filter(({ id, index }) =>
+            id === clusterId
+            && (index < startIndex || index >= endIndex)
+            && next[index] !== value,
+          )
+          .map(({ index }) => index);
+        if (targets.length > 0) {
+          setRecurrenceHint({ startIndex, targets, label: value });
+        } else {
+          setRecurrenceHint(null);
+        }
+      }
+
+      return next;
     });
   }
 
@@ -511,7 +579,6 @@ export default function App() {
       setError(`Add a ${providerLabel(llmProvider)} API key to generate in-tool, or use Copy prompt.`);
       return;
     }
-
     if (modelForProvider(llmProvider) === CUSTOM_MODEL && !customModel.trim()) {
       setError('Enter a custom model ID, or choose a curated model from the dropdown.');
       return;
@@ -519,25 +586,53 @@ export default function App() {
 
     setIsGenerating(true);
     setError('');
+    setIterationLog({ iterations: [], finalStatus: 'idle' });
     abortRef.current = new AbortController();
 
-    try {
-      const text = await generateForProvider(llmProvider, prompt, apiKey.trim(), abortRef.current.signal);
-      const lines = text
-        .split('\n')
-        .map((line) => line.replace(/^\s*\d+[\).:-]?\s*/, '').trim())
-        .filter(Boolean)
-        .slice(0, phrases.length);
+    const pinnedLines = new Map<number, string>();
+    output.forEach((line, index) => {
+      if (line.locked) pinnedLines.set(index, line.text);
+    });
 
-      setOutput(lines.map((line, index) => {
-        const validation = validateLockedWords(line, effectiveLocks[index]);
-        return {
-          text: line,
-          locked: false,
-          invalid: !validation.valid,
-          validationMessage: validation.message,
-        };
-      }));
+    const llmCall = (promptText: string, signal?: AbortSignal) =>
+      generateForProvider(llmProvider, promptText, apiKey.trim(), signal);
+
+    try {
+      const generator = runPipeline({
+        phrases,
+        locks: effectiveLocks,
+        sectionLabels,
+        context,
+        pinnedLines,
+        llmCall,
+        signal: abortRef.current.signal,
+      });
+
+      let log: IterationLog | undefined;
+      while (true) {
+        const next = await generator.next();
+        if (next.done) {
+          log = next.value;
+          break;
+        }
+        setIterationLog((existing) => ({
+          ...existing,
+          iterations: [...existing.iterations, next.value],
+        }));
+      }
+
+      if (log) {
+        setIterationLog(log);
+        const final = log.iterations[log.iterations.length - 1];
+        if (final) {
+          setOutput(final.output.map((text, index) => ({
+            text,
+            locked: pinnedLines.has(index),
+            validation: final.validations[index] ?? null,
+          })));
+        }
+        if (log.finalStatus === 'error') setError(log.errorMessage ?? 'Generation failed.');
+      }
     } catch (caught) {
       if ((caught as Error).name !== 'AbortError') {
         setError(caught instanceof Error ? caught.message : 'Generation failed.');
@@ -623,6 +718,21 @@ export default function App() {
               <button type="button" className="ghost small" onClick={clearLocks}>Clear locks</button>
             </div>
           </div>
+          {recurrenceHint && (
+            <div className="recurrence-hint">
+              <span>
+                Phrase{recurrenceHint.targets.length > 1 ? 's' : ''}{' '}
+                {recurrenceHint.targets.map((t) => t + 1).join(', ')} share this melody — apply <strong>{recurrenceHint.label}</strong> there too?
+              </span>
+              <button type="button" onClick={() => {
+                setSectionLabels((existing) => existing.map((label, index) =>
+                  recurrenceHint.targets.includes(index) ? recurrenceHint.label : label,
+                ));
+                setRecurrenceHint(null);
+              }}>Apply</button>
+              <button type="button" className="ghost" onClick={() => setRecurrenceHint(null)}>Dismiss</button>
+            </div>
+          )}
           {phrases.length === 0 ? (
             <p className="empty">Upload a MIDI file to see phrase boundaries, syllable counts, stress, and line-ending direction.</p>
           ) : (
@@ -647,6 +757,7 @@ export default function App() {
                     <PhraseRow
                       phrase={phrase}
                       index={index}
+                      origin={phraseOrigins[index] ?? 'auto'}
                       lock={locks[index]}
                       onLockInputChange={handleLockInputChange}
                       onPolicyChange={handlePolicyChange}
@@ -715,6 +826,7 @@ export default function App() {
           {strictMismatch && <div className="warning-box">Strict locked content mismatch exists. Fix the line or switch its policy before generating.</div>}
           {copyStatus && <div className="copy-status" role="status">{copyStatus}</div>}
           {promptVisible && <pre className="prompt-box">{prompt}</pre>}
+          <IterationLogPanel log={iterationLog} />
 
           <div className="generate-row">
             <select className="provider-select" aria-label="LLM provider" value={llmProvider} onChange={(event) => setLlmProvider(event.target.value as LlmProvider)}>
@@ -760,6 +872,14 @@ export default function App() {
         <div className="panel-heading">
           <h2>Lyrics</h2>
           <div className="button-row">
+            <button
+              type="button"
+              className="ghost small"
+              disabled={!canGenerate || output.length === 0}
+              onClick={generateLyrics}
+            >
+              Revise rest
+            </button>
             <button type="button" className="ghost small" onClick={lockAll}><Lock size={15} /> Lock all</button>
             <button type="button" className="ghost small" onClick={unlockAll}><Unlock size={15} /> Unlock all</button>
             <button type="button" className="ghost small" onClick={copyLyrics}><Clipboard size={15} /> Copy</button>
@@ -771,13 +891,23 @@ export default function App() {
         ) : (
           <div className="output-list">
             {output.map((line, index) => (
-              <div key={`${index}-${line.text}`} className={`output-line ${line.invalid ? 'invalid' : ''}`}>
+              <div key={`${index}-${line.text}`} className={`output-line ${line.validation && !line.validation.passed ? 'invalid' : ''}`}>
                 <button type="button" className="icon-button" onClick={() => toggleOutputLock(index)} title={line.locked ? 'Unlock line' : 'Lock line'}>
                   {line.locked ? <Lock size={16} /> : <Unlock size={16} />}
                 </button>
+                {line.validation && (
+                  <span
+                    className={`line-badge ${line.validation.passed ? 'pass' : 'warn'}`}
+                    title={line.validation.failures.map((f) => f.message).join('; ') || 'passed'}
+                  >
+                    {line.validation.passed ? '✓' : '!'}
+                  </span>
+                )}
                 <input value={line.text} onChange={(event) => updateOutputLine(index, event.target.value)} />
                 <span className="mono">{phrases[index]?.stressPattern}</span>
-                {line.invalid && <small>{line.validationMessage}</small>}
+                {line.validation && !line.validation.passed && (
+                  <small>{line.validation.failures.map((f) => f.message).join('; ')}</small>
+                )}
               </div>
             ))}
           </div>

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { buildPrompt, rhymeLabels, rhythmProfile, sectionRhymeLabels, sectionRhymePlan } from './prompt';
+import { buildPrompt, buildRevisionPrompt, rhymeLabels, rhythmProfile, sectionRhymeLabels, sectionRhymePlan } from './prompt';
 import type { LyricsContext, Phrase, PhraseLockState } from './types';
 
 const context: LyricsContext = {
@@ -74,5 +74,55 @@ describe('prompt builder', () => {
     const prompt = buildPrompt([phrase], [lock], { ...context, otherNotes: 'Make the hook brighter.' }, ['Chorus']);
 
     expect(prompt.trim().endsWith('OTHER NOTES\nMake the hook brighter.')).toBe(true);
+  });
+});
+
+const fixturePhrase = (id: string, syllables: number): Phrase => ({
+  id, notes: [], syllables,
+  stressPattern: 'w-S-w-S-w',
+  endingDirection: 'level',
+  startTime: 0, endTime: 0,
+});
+
+const fixtureContext: LyricsContext = {
+  theme: '', mood: '', genre: '', pov: '', otherNotes: '',
+  mustInclude: '', avoid: '', rhymeScheme: 'SECTION', strictSyllables: true,
+};
+
+describe('buildRevisionPrompt', () => {
+  it('marks failing lines and instructs to keep others verbatim', () => {
+    const prompt = buildRevisionPrompt({
+      phrases: [fixturePhrase('p1', 5), fixturePhrase('p2', 5)],
+      locks: [],
+      sectionLabels: ['Verse 1', 'Verse 1'],
+      context: fixtureContext,
+      currentLines: ['line one ok', 'line two failing'],
+      validations: [
+        { index: 0, text: 'line one ok', passed: true, failures: [] },
+        { index: 1, text: 'line two failing', passed: false, failures: [{ type: 'syllables', message: '6 syllables, target 5' }] },
+      ],
+      previousAttempts: new Map(),
+    });
+    expect(prompt).toContain('REWRITE ONLY');
+    expect(prompt).toContain('Line 2');
+    expect(prompt).toMatch(/keep[^\n]*verbatim/i);
+  });
+
+  it('includes prior attempts when provided', () => {
+    const prior = new Map<number, string[]>([[1, ['previous bad attempt']]]);
+    const prompt = buildRevisionPrompt({
+      phrases: [fixturePhrase('p1', 5), fixturePhrase('p2', 5)],
+      locks: [],
+      sectionLabels: ['Verse 1', 'Verse 1'],
+      context: fixtureContext,
+      currentLines: ['line one', 'line two'],
+      validations: [
+        { index: 0, text: 'line one', passed: true, failures: [] },
+        { index: 1, text: 'line two', passed: false, failures: [{ type: 'syllables', message: 'short' }] },
+      ],
+      previousAttempts: prior,
+    });
+    expect(prompt).toContain('previous bad attempt');
+    expect(prompt).toMatch(/different direction/i);
   });
 });

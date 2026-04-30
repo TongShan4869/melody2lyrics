@@ -68,6 +68,54 @@ export type LyricsContext = {
 export type GeneratedLine = {
   text: string;
   locked: boolean;
-  invalid: boolean;
-  validationMessage?: string;
+  validation: LineValidation | null;
 };
+
+export type ValidationFailureType =
+  | 'syllables'
+  | 'locked-words'
+  | 'end-collision'
+  | 'filler'
+  | 'held-vowel'
+  | 'avoid';
+
+export type ValidationFailure = {
+  type: ValidationFailureType;
+  message: string;
+};
+
+export type LineValidation = {
+  index: number;
+  text: string;
+  passed: boolean;
+  failures: ValidationFailure[];
+};
+
+export type Iteration = {
+  number: number;
+  kind: 'initial' | 'revise';
+  output: string[];
+  validations: LineValidation[];
+  failingIndices: number[];
+};
+
+export type IterationLog = {
+  iterations: Iteration[];
+  finalStatus: 'clean' | 'capped' | 'error' | 'idle';
+  errorMessage?: string;
+};
+
+export type LLMCall = (prompt: string, signal?: AbortSignal) => Promise<string>;
+
+export type PipelineInput = {
+  phrases: Phrase[];
+  locks: PhraseLockState[];
+  sectionLabels: string[];
+  context: LyricsContext;
+  pinnedLines: Map<number, string>;
+  llmCall: LLMCall;
+  maxIterations?: number;
+  signal?: AbortSignal;
+};
+
+export type PhraseOrigin = 'auto' | 'manual';
