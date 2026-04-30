@@ -49,22 +49,19 @@ describe('detectSections', () => {
     expect(detectSections(phrases)).toEqual(['Verse 1']);
   });
 
-  it('detects a repeating chorus', () => {
+  it('labels alternating verse/chorus with run-based numbering', () => {
     const verseA = makePhrase([60, 62, 64, 65], [1, 1, 1, 1]);
-    const verseB = makePhrase([60, 62, 64, 65], [1, 1, 1, 1]);
+    const verseB = makePhrase([65, 60, 67, 62], [1, 1, 1, 1]);
     const chorus = makePhrase([72, 70, 67, 65], [1, 1, 1, 2]);
-    const labels = detectSections([verseA, verseB, chorus, verseA, verseB, chorus]);
-    expect(labels).toEqual([
-      'Section 1', 'Section 1', 'Chorus 1',
-      'Section 2', 'Section 2', 'Chorus 2',
-    ]);
+    const labels = detectSections([verseA, chorus, verseB, chorus]);
+    expect(labels).toEqual(['Verse 1', 'Chorus 1', 'Verse 2', 'Chorus 2']);
   });
 
-  it('falls back to sequential labels for fully unique phrases', () => {
+  it('falls back to a single Verse run when no chorus repeats', () => {
     const a = makePhrase([60, 62, 64], [1, 1, 1]);
-    const b = makePhrase([72, 70, 68], [1, 1, 1]);
-    const c = makePhrase([80, 75, 70], [1, 1, 1]);
+    const b = makePhrase([72, 64, 68], [1, 1, 1]);
+    const c = makePhrase([55, 62, 50], [1, 1, 1]);
     const labels = detectSections([a, b, c]);
-    expect(labels).toEqual(['Verse 1', 'Chorus 1', 'Chorus 1']);
+    expect(labels).toEqual(['Verse 1', 'Verse 1', 'Verse 1']);
   });
 });

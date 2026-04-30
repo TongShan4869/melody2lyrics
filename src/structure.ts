@@ -79,39 +79,27 @@ export function detectSections(phrases: Phrase[]): string[] {
   const clusterSize = new Array(nextCluster).fill(0);
   for (const id of clusterId) clusterSize[id] += 1;
 
-  // The smallest recurring cluster (size >= 2) becomes Chorus.
+  // Largest recurring cluster (size >= 2) becomes Chorus.
   let chorusCluster = -1;
-  let chorusSize = phrases.length + 1;
+  let chorusSize = 1;
   for (let id = 0; id < nextCluster; id += 1) {
-    if (clusterSize[id] >= 2 && clusterSize[id] < chorusSize) {
+    if (clusterSize[id] >= 2 && clusterSize[id] > chorusSize) {
       chorusCluster = id;
       chorusSize = clusterSize[id];
     }
   }
 
-  const baseName = (id: number): string => {
-    if (id === chorusCluster) return 'Chorus';
-    if (clusterSize[id] >= 2) return 'Section';
-    return 'Verse';
-  };
+  const baseName = (id: number): string =>
+    id === chorusCluster ? 'Chorus' : 'Verse';
 
-  const clusterOccurrence = new Map<number, number>();
-  let lastId = -1;
-  for (let i = 0; i < clusterId.length; i += 1) {
-    const id = clusterId[i];
-    if (id !== lastId) {
-      clusterOccurrence.set(id, (clusterOccurrence.get(id) ?? 0) + 1);
-      lastId = id;
-    }
-  }
-
+  // Run-based numbering: counter increments each time the baseName changes.
   const counters = new Map<string, number>();
-  lastId = -1;
+  let lastName = '';
   return clusterId.map((id) => {
     const name = baseName(id);
-    if (id !== lastId) {
+    if (name !== lastName) {
       counters.set(name, (counters.get(name) ?? 0) + 1);
-      lastId = id;
+      lastName = name;
     }
     return `${name} ${counters.get(name)}`;
   });
