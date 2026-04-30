@@ -5,7 +5,7 @@ import { analyzeNotes, mergePhrases, splitPhrase } from './prosody';
 import { buildPrompt } from './prompt';
 import { parseLockInput } from './locks';
 import { generateWithAnthropic, generateWithDeepSeek, generateWithOpenAI } from './llm';
-import type { GeneratedLine, IterationLog, LineValidation, LockPolicy, LyricsContext, MidiFileInfo, Note, Phrase, PhraseLockState } from './types';
+import type { GeneratedLine, IterationLog, LineValidation, LockPolicy, LyricsContext, MidiFileInfo, Note, Phrase, PhraseLockState, PhraseOrigin } from './types';
 import { runPipeline } from './agent';
 import { PhraseRow } from './components/PhraseRow';
 import { melodyDuration, schedulePreview, type PlaybackHandle } from './playback';
@@ -234,6 +234,7 @@ export default function App() {
   const [phrases, setPhrases] = useState<Phrase[]>([]);
   const [locks, setLocks] = useState<PhraseLockState[]>([]);
   const [sectionLabels, setSectionLabels] = useState<string[]>([]);
+  const [phraseOrigins, setPhraseOrigins] = useState<PhraseOrigin[]>([]);
   const [context, setContext] = useState<LyricsContext>(initialContext);
   const [llmProvider, setLlmProvider] = useState<LlmProvider>('openai');
   const [apiKey, setApiKey] = useState('');
@@ -311,6 +312,7 @@ export default function App() {
       setPhrases(analyzed);
       setLocks(analyzed.map((_, index) => parseLockInput('', index)));
       setSectionLabels(detectSections(analyzed));
+      setPhraseOrigins(analyzed.map(() => 'auto'));
       setOutput([]);
       setPlayheadTime(0);
       setPreviewStartTime(0);
@@ -322,10 +324,11 @@ export default function App() {
     }
   }
 
-  function updatePhrases(nextPhrases: Phrase[], nextSectionLabels?: string[]) {
+  function updatePhrases(nextPhrases: Phrase[], nextSectionLabels?: string[], nextOrigins?: PhraseOrigin[]) {
     setPhrases(nextPhrases);
     setLocks((existing) => nextPhrases.map((_, index) => existing[index] ?? parseLockInput('', index)));
     setSectionLabels((existing) => syncSectionLabels(nextSectionLabels ?? existing, nextPhrases.length));
+    setPhraseOrigins(nextOrigins ?? nextPhrases.map(() => 'manual'));
   }
 
   function handleSectionMarkerChange(startIndex: number, value: string) {
@@ -715,6 +718,7 @@ export default function App() {
                     <PhraseRow
                       phrase={phrase}
                       index={index}
+                      origin={phraseOrigins[index] ?? 'auto'}
                       lock={locks[index]}
                       onLockInputChange={handleLockInputChange}
                       onPolicyChange={handlePolicyChange}

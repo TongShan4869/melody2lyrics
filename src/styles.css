@@ -754,3 +754,15 @@ label {
   background: #3a2f1f;
   color: #f5d36a;
 }
+
+.origin-chip {
+  display: inline-block;
+  font-size: 0.7em;
+  padding: 2px 6px;
+  border-radius: 999px;
+  margin-left: 6px;
+  text-transform: lowercase;
+  letter-spacing: 0.04em;
+}
+.origin-chip.auto { background: #1f3a3a; color: #79d3d3; }
+.origin-chip.manual { background: #3a1f3a; color: #d379d3; }
