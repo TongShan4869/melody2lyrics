@@ -188,6 +188,44 @@ function InfoLabel({ label, info }: { label: string; info: string }) {
   );
 }
 
+function IterationLogPanel({ log }: { log: IterationLog }) {
+  const [expanded, setExpanded] = useState(true);
+  if (log.iterations.length === 0 && log.finalStatus === 'idle') return null;
+
+  return (
+    <div className="iteration-log">
+      <button type="button" className="iteration-log-header" onClick={() => setExpanded(!expanded)}>
+        <span>Iteration log</span>
+        <span className="mono">{log.iterations.length} iter · {log.finalStatus}</span>
+      </button>
+      {expanded && (
+        <div className="iteration-log-body">
+          {log.iterations.map((iteration) => {
+            const passed = iteration.validations.filter((v) => v.passed).length;
+            const total = iteration.validations.length;
+            return (
+              <div key={iteration.number} className="iteration-entry">
+                <strong>Iter {iteration.number} · {iteration.kind} · {passed}/{total} passed</strong>
+                {iteration.failingIndices.map((index) => {
+                  const validation = iteration.validations[index];
+                  return (
+                    <div key={index} className="iteration-failure">
+                      Line {index + 1} — {validation.failures.map((f) => f.message).join('; ')}
+                    </div>
+                  );
+                })}
+              </div>
+            );
+          })}
+          {log.finalStatus === 'capped' && <p className="iteration-final">Stopped: hit iteration cap with unresolved lines.</p>}
+          {log.finalStatus === 'clean' && <p className="iteration-final">Stopped: clean.</p>}
+          {log.finalStatus === 'error' && <p className="iteration-final">Stopped: {log.errorMessage}</p>}
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function App() {
   const [fileName, setFileName] = useState('');
   const [midiInfo, setMidiInfo] = useState<MidiFileInfo | null>(null);
@@ -744,6 +782,7 @@ export default function App() {
           {strictMismatch && <div className="warning-box">Strict locked content mismatch exists. Fix the line or switch its policy before generating.</div>}
           {copyStatus && <div className="copy-status" role="status">{copyStatus}</div>}
           {promptVisible && <pre className="prompt-box">{prompt}</pre>}
+          <IterationLogPanel log={iterationLog} />
 
           <div className="generate-row">
             <select className="provider-select" aria-label="LLM provider" value={llmProvider} onChange={(event) => setLlmProvider(event.target.value as LlmProvider)}>
