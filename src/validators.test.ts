@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { syllableValidator, lockedWordsValidator, endCollisionValidator } from './validators';
+import { syllableValidator, lockedWordsValidator, endCollisionValidator, fillerEndingValidator } from './validators';
 import type { Phrase } from './types';
 import { parseLockInput } from './locks';
 
@@ -94,5 +94,23 @@ describe('endCollisionValidator', () => {
     const sections = ['Verse 1', 'Verse 1'];
     const result = endCollisionValidator(lines, sections, 1);
     expect(result?.type).toBe('end-collision');
+  });
+});
+
+describe('fillerEndingValidator', () => {
+  it('fails when line ends in a default filler word', () => {
+    const result = fillerEndingValidator('falling through the night', '');
+    expect(result).toEqual({
+      type: 'filler',
+      message: expect.stringContaining('night'),
+    });
+  });
+
+  it('passes when filler word is in mustInclude', () => {
+    expect(fillerEndingValidator('falling through the night', 'night, dream')).toBeNull();
+  });
+
+  it('passes for non-filler endings', () => {
+    expect(fillerEndingValidator('I will see you soon', '')).toBeNull();
   });
 });

@@ -1,6 +1,7 @@
 import type { Phrase, ValidationFailure, PhraseLockState } from './types';
 import { countSyllables } from './syllables';
 import { validateLockedWords } from './locks';
+import { DEFAULT_FILLER_END_WORDS } from './prompt';
 
 export function syllableValidator(
   line: string,
@@ -55,6 +56,29 @@ export function endCollisionValidator(
         message: `ends in "${target}" — collides with line ${i + 1}`,
       };
     }
+  }
+  return null;
+}
+
+function tokenizeMustInclude(raw: string): Set<string> {
+  return new Set(
+    raw.toLowerCase().split(/[,\s]+/).map((token) => token.trim()).filter(Boolean),
+  );
+}
+
+export function fillerEndingValidator(
+  line: string,
+  mustInclude: string,
+): ValidationFailure | null {
+  const target = endWord(line);
+  if (!target) return null;
+  const allowed = tokenizeMustInclude(mustInclude);
+  if (allowed.has(target)) return null;
+  if ((DEFAULT_FILLER_END_WORDS as readonly string[]).includes(target)) {
+    return {
+      type: 'filler',
+      message: `ends in default filler word "${target}"`,
+    };
   }
   return null;
 }
