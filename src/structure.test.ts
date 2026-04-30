@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { phraseSimilarity } from './structure';
+import { detectSections, phraseSimilarity } from './structure';
 import type { Phrase, AnalyzedNote } from './types';
 
 const makeNote = (midi: number, duration: number): AnalyzedNote => ({
@@ -40,5 +40,31 @@ describe('phraseSimilarity', () => {
     const a = makePhrase([60, 62, 64, 65], [1, 1, 1, 1]);
     const b = makePhrase([72, 65, 70, 60], [1, 1, 1, 1]);
     expect(phraseSimilarity(a, b)).toBeLessThan(0.7);
+  });
+});
+
+describe('detectSections', () => {
+  it('labels a single phrase as Verse 1', () => {
+    const phrases = [makePhrase([60, 62, 64, 65], [1, 1, 1, 1])];
+    expect(detectSections(phrases)).toEqual(['Verse 1']);
+  });
+
+  it('detects a repeating chorus', () => {
+    const verseA = makePhrase([60, 62, 64, 65], [1, 1, 1, 1]);
+    const verseB = makePhrase([60, 62, 64, 65], [1, 1, 1, 1]);
+    const chorus = makePhrase([72, 70, 67, 65], [1, 1, 1, 2]);
+    const labels = detectSections([verseA, verseB, chorus, verseA, verseB, chorus]);
+    expect(labels).toEqual([
+      'Section 1', 'Section 1', 'Chorus 1',
+      'Section 2', 'Section 2', 'Chorus 2',
+    ]);
+  });
+
+  it('falls back to sequential labels for fully unique phrases', () => {
+    const a = makePhrase([60, 62, 64], [1, 1, 1]);
+    const b = makePhrase([72, 70, 68], [1, 1, 1]);
+    const c = makePhrase([80, 75, 70], [1, 1, 1]);
+    const labels = detectSections([a, b, c]);
+    expect(labels).toEqual(['Verse 1', 'Chorus 1', 'Chorus 1']);
   });
 });

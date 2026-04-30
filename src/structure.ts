@@ -56,3 +56,63 @@ export function phraseSimilarity(a: Phrase, b: Phrase): number {
 
   return 0.55 * pitchScore + 0.3 * rhythmScore + 0.15 * lengthScore;
 }
+
+const SIMILARITY_THRESHOLD = 0.85;
+
+export function detectSections(phrases: Phrase[]): string[] {
+  if (phrases.length === 0) return [];
+
+  const clusterId = new Array(phrases.length).fill(-1);
+  let nextCluster = 0;
+  for (let i = 0; i < phrases.length; i += 1) {
+    if (clusterId[i] !== -1) continue;
+    clusterId[i] = nextCluster;
+    for (let j = i + 1; j < phrases.length; j += 1) {
+      if (clusterId[j] !== -1) continue;
+      if (phraseSimilarity(phrases[i], phrases[j]) >= SIMILARITY_THRESHOLD) {
+        clusterId[j] = nextCluster;
+      }
+    }
+    nextCluster += 1;
+  }
+
+  const clusterSize = new Array(nextCluster).fill(0);
+  for (const id of clusterId) clusterSize[id] += 1;
+
+  // The smallest recurring cluster (size >= 2) becomes Chorus.
+  let chorusCluster = -1;
+  let chorusSize = phrases.length + 1;
+  for (let id = 0; id < nextCluster; id += 1) {
+    if (clusterSize[id] >= 2 && clusterSize[id] < chorusSize) {
+      chorusCluster = id;
+      chorusSize = clusterSize[id];
+    }
+  }
+
+  const baseName = (id: number): string => {
+    if (id === chorusCluster) return 'Chorus';
+    if (clusterSize[id] >= 2) return 'Section';
+    return 'Verse';
+  };
+
+  const clusterOccurrence = new Map<number, number>();
+  let lastId = -1;
+  for (let i = 0; i < clusterId.length; i += 1) {
+    const id = clusterId[i];
+    if (id !== lastId) {
+      clusterOccurrence.set(id, (clusterOccurrence.get(id) ?? 0) + 1);
+      lastId = id;
+    }
+  }
+
+  const counters = new Map<string, number>();
+  lastId = -1;
+  return clusterId.map((id) => {
+    const name = baseName(id);
+    if (id !== lastId) {
+      counters.set(name, (counters.get(name) ?? 0) + 1);
+      lastId = id;
+    }
+    return `${name} ${counters.get(name)}`;
+  });
+}
