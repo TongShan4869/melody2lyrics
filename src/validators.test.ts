@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { syllableValidator, lockedWordsValidator, endCollisionValidator, fillerEndingValidator, heldVowelValidator } from './validators';
+import { syllableValidator, lockedWordsValidator, endCollisionValidator, fillerEndingValidator, heldVowelValidator, avoidWordsValidator } from './validators';
 import type { Phrase } from './types';
 import { parseLockInput } from './locks';
 
@@ -153,5 +153,27 @@ describe('heldVowelValidator', () => {
   it('passes when final word is unknown (skip)', () => {
     const phrase = phraseWith([0.25, 0.25, 0.25, 1.5]);
     expect(heldVowelValidator('whispering xyzzy', phrase)).toBeNull();
+  });
+});
+
+describe('avoidWordsValidator', () => {
+  it('passes when no avoid words appear', () => {
+    expect(avoidWordsValidator('walking through the rain', 'neon, dreams')).toBeNull();
+  });
+
+  it('fails when an avoid word appears', () => {
+    const result = avoidWordsValidator('chasing neon dreams', 'neon, dreams');
+    expect(result).toEqual({
+      type: 'avoid',
+      message: expect.stringContaining('neon'),
+    });
+  });
+
+  it('passes when avoid is empty', () => {
+    expect(avoidWordsValidator('chasing neon dreams', '')).toBeNull();
+  });
+
+  it('is case-insensitive and accepts whitespace separators', () => {
+    expect(avoidWordsValidator('Chasing NEON dreams', 'neon dreams')?.type).toBe('avoid');
   });
 });

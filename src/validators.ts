@@ -112,3 +112,21 @@ export function heldVowelValidator(
     message: `final note is held but "${word}" ends in a closed vowel (${vowel})`,
   };
 }
+
+export function avoidWordsValidator(
+  line: string,
+  avoid: string,
+): ValidationFailure | null {
+  const tokens = avoid.toLowerCase().split(/[,\s]+/).map((t) => t.trim()).filter(Boolean);
+  if (tokens.length === 0) return null;
+  const cleaned = ` ${line.toLowerCase().replace(/[^a-z'\s]/g, ' ')} `;
+  for (const token of tokens) {
+    if (cleaned.includes(` ${token} `)) {
+      return {
+        type: 'avoid',
+        message: `contains avoid word "${token}"`,
+      };
+    }
+  }
+  return null;
+}
