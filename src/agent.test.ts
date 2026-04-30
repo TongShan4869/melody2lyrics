@@ -125,3 +125,40 @@ describe('runPipeline abort', () => {
     expect(log.errorMessage).toContain('aborted');
   });
 });
+
+describe('runPipeline empty-output guard', () => {
+  it('reports error when initial output has zero parseable lines', async () => {
+    const phrases = [phrase(3, 'a'), phrase(3, 'b')];
+    const locks: PhraseLockState[] = [parseLockInput('', 0), parseLockInput('', 1)];
+    const sectionLabels = ['Verse 1', 'Verse 1'];
+    const input: PipelineInput = {
+      phrases, locks, sectionLabels, context: ctx,
+      pinnedLines: new Map(),
+      llmCall: async () => '   ', // whitespace only
+    };
+    const { result } = await consume(runPipeline(input));
+    const log = result as IterationLog;
+    expect(log.finalStatus).toBe('error');
+    expect(log.errorMessage).toContain('no parseable');
+  });
+
+  it('reports error when revision output has zero parseable lines', async () => {
+    const phrases = [phrase(3, 'a'), phrase(3, 'b')];
+    const locks: PhraseLockState[] = [parseLockInput('', 0), parseLockInput('', 1)];
+    const sectionLabels = ['Verse 1', 'Verse 1'];
+    const responses = [
+      '1. one two three four\n2. four five six',  // initial: line 1 fails (4 syllables, target 3)
+      '',  // revision returns empty
+    ];
+    let call = 0;
+    const input: PipelineInput = {
+      phrases, locks, sectionLabels, context: ctx,
+      pinnedLines: new Map(),
+      llmCall: async () => responses[call++] ?? '',
+    };
+    const { result } = await consume(runPipeline(input));
+    const log = result as IterationLog;
+    expect(log.finalStatus).toBe('error');
+    expect(log.errorMessage).toContain('Revision returned no parseable');
+  });
+});

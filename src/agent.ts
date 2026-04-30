@@ -37,8 +37,17 @@ export async function* runPipeline(
   } catch (caught) {
     return errorLog(iterations, caught);
   }
+  console.debug('[runPipeline] LLM output:', raw);
 
   let lines = applyPinned(parseLines(raw, input.phrases.length));
+  if (lines.length === 0 && input.phrases.length > 0) {
+    const excerpt = raw.trim().slice(0, 500) || '(empty response)';
+    return {
+      iterations,
+      finalStatus: 'error',
+      errorMessage: `Model returned no parseable lyric lines. Raw response: ${excerpt}`,
+    };
+  }
   let validations = validateLines(lines, input.phrases, input.locks, input.sectionLabels, input.context);
   const initial: Iteration = {
     number: 1,
@@ -82,8 +91,17 @@ export async function* runPipeline(
     } catch (caught) {
       return errorLog(iterations, caught);
     }
+    console.debug('[runPipeline] LLM output:', nextRaw);
 
     const nextLines = applyPinned(parseLines(nextRaw, input.phrases.length));
+    if (nextLines.length === 0 && input.phrases.length > 0) {
+      const excerpt = nextRaw.trim().slice(0, 500) || '(empty response)';
+      return {
+        iterations,
+        finalStatus: 'error',
+        errorMessage: `Revision returned no parseable lines. Raw response: ${excerpt}`,
+      };
+    }
     const merged = nextLines.map((line, index) =>
       last.failingIndices.includes(index) ? line : last.output[index],
     );
