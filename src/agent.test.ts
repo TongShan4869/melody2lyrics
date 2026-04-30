@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { runPipeline } from './agent';
-import type { LyricsContext, Phrase, PhraseLockState, PipelineInput } from './types';
+import type { IterationLog, LyricsContext, Phrase, PhraseLockState, PipelineInput } from './types';
 import { parseLockInput } from './locks';
 
 const ctx: LyricsContext = {
@@ -42,5 +42,59 @@ describe('runPipeline initial generation', () => {
     const log = result as { finalStatus: string; iterations: unknown[] };
     expect(log.finalStatus).toBe('clean');
     expect(log.iterations).toHaveLength(1);
+  });
+});
+
+describe('runPipeline revision loop', () => {
+  it('runs a revision iteration when the initial output fails', async () => {
+    const phrases = [phrase(3, 'a'), phrase(3, 'b')];
+    const locks: PhraseLockState[] = [parseLockInput('', 0), parseLockInput('', 1)];
+    const sectionLabels = ['Verse 1', 'Verse 1'];
+
+    const responses = [
+      '1. one two three four\n2. four five six',
+      '1. one two three\n2. four five six',
+    ];
+    let call = 0;
+    const input: PipelineInput = {
+      phrases, locks, sectionLabels, context: ctx,
+      pinnedLines: new Map(),
+      llmCall: async () => responses[call++] ?? responses[responses.length - 1],
+    };
+    const { result } = await consume(runPipeline(input));
+    const log = result as IterationLog;
+    expect(log.iterations).toHaveLength(2);
+    expect(log.iterations[1].kind).toBe('revise');
+    expect(log.finalStatus).toBe('clean');
+  });
+
+  it('caps at maxIterations and reports capped', async () => {
+    const phrases = [phrase(3, 'a')];
+    const locks: PhraseLockState[] = [parseLockInput('', 0)];
+    const sectionLabels = ['Verse 1'];
+    const input: PipelineInput = {
+      phrases, locks, sectionLabels, context: ctx,
+      pinnedLines: new Map(),
+      llmCall: async () => '1. way too many syllables in one line',
+      maxIterations: 2,
+    };
+    const { result } = await consume(runPipeline(input));
+    const log = result as IterationLog;
+    expect(log.iterations).toHaveLength(2);
+    expect(log.finalStatus).toBe('capped');
+  });
+
+  it('preserves pinned lines verbatim across iterations', async () => {
+    const phrases = [phrase(3, 'a'), phrase(3, 'b')];
+    const locks: PhraseLockState[] = [parseLockInput('', 0), parseLockInput('', 1)];
+    const sectionLabels = ['Verse 1', 'Verse 1'];
+    const input: PipelineInput = {
+      phrases, locks, sectionLabels, context: ctx,
+      pinnedLines: new Map([[0, 'pinned line one']]),
+      llmCall: async () => '1. wrong line\n2. four five six',
+    };
+    const { result } = await consume(runPipeline(input));
+    const log = result as IterationLog;
+    expect(log.iterations[0].output[0]).toBe('pinned line one');
   });
 });
