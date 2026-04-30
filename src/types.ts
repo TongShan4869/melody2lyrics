@@ -68,8 +68,7 @@ export type LyricsContext = {
 export type GeneratedLine = {
   text: string;
   locked: boolean;
-  invalid: boolean;
-  validationMessage?: string;
+  validation: LineValidation | null;
 };
 
 export type ValidationFailureType =

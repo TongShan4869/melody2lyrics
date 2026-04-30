@@ -3,9 +3,10 @@ import { Clipboard, Download, FileMusic, Lock, Pause, Play, Unlock, Wand2, XCirc
 import { parseMidiFile } from './midi';
 import { analyzeNotes, mergePhrases, splitPhrase } from './prosody';
 import { buildPrompt } from './prompt';
-import { parseLockInput, validateLockedWords } from './locks';
+import { parseLockInput } from './locks';
 import { generateWithAnthropic, generateWithDeepSeek, generateWithOpenAI } from './llm';
-import type { GeneratedLine, LockPolicy, LyricsContext, MidiFileInfo, Note, Phrase, PhraseLockState } from './types';
+import type { GeneratedLine, IterationLog, LineValidation, LockPolicy, LyricsContext, MidiFileInfo, Note, Phrase, PhraseLockState } from './types';
+import { runPipeline } from './agent';
 import { PhraseRow } from './components/PhraseRow';
 import { melodyDuration, schedulePreview, type PlaybackHandle } from './playback';
 
@@ -203,6 +204,7 @@ export default function App() {
   const [customModel, setCustomModel] = useState('');
   const [promptVisible, setPromptVisible] = useState(true);
   const [output, setOutput] = useState<GeneratedLine[]>([]);
+  const [iterationLog, setIterationLog] = useState<IterationLog>({ iterations: [], finalStatus: 'idle' });
   const [error, setError] = useState('');
   const [copyStatus, setCopyStatus] = useState('');
   const [isGenerating, setIsGenerating] = useState(false);
@@ -511,7 +513,6 @@ export default function App() {
       setError(`Add a ${providerLabel(llmProvider)} API key to generate in-tool, or use Copy prompt.`);
       return;
     }
-
     if (modelForProvider(llmProvider) === CUSTOM_MODEL && !customModel.trim()) {
       setError('Enter a custom model ID, or choose a curated model from the dropdown.');
       return;
@@ -519,25 +520,53 @@ export default function App() {
 
     setIsGenerating(true);
     setError('');
+    setIterationLog({ iterations: [], finalStatus: 'idle' });
     abortRef.current = new AbortController();
 
-    try {
-      const text = await generateForProvider(llmProvider, prompt, apiKey.trim(), abortRef.current.signal);
-      const lines = text
-        .split('\n')
-        .map((line) => line.replace(/^\s*\d+[\).:-]?\s*/, '').trim())
-        .filter(Boolean)
-        .slice(0, phrases.length);
+    const pinnedLines = new Map<number, string>();
+    output.forEach((line, index) => {
+      if (line.locked) pinnedLines.set(index, line.text);
+    });
 
-      setOutput(lines.map((line, index) => {
-        const validation = validateLockedWords(line, effectiveLocks[index]);
-        return {
-          text: line,
-          locked: false,
-          invalid: !validation.valid,
-          validationMessage: validation.message,
-        };
-      }));
+    const llmCall = (promptText: string, signal?: AbortSignal) =>
+      generateForProvider(llmProvider, promptText, apiKey.trim(), signal);
+
+    try {
+      const generator = runPipeline({
+        phrases,
+        locks: effectiveLocks,
+        sectionLabels,
+        context,
+        pinnedLines,
+        llmCall,
+        signal: abortRef.current.signal,
+      });
+
+      let log: IterationLog | undefined;
+      while (true) {
+        const next = await generator.next();
+        if (next.done) {
+          log = next.value;
+          break;
+        }
+        setIterationLog((existing) => ({
+          ...existing,
+          iterations: [...existing.iterations, next.value],
+        }));
+      }
+
+      if (log) {
+        setIterationLog(log);
+        const final = log.iterations[log.iterations.length - 1];
+        if (final) {
+          setOutput(final.output.map((text, index) => ({
+            text,
+            locked: pinnedLines.has(index),
+            validation: final.validations[index] ?? null,
+          })));
+        }
+        if (log.finalStatus === 'error') setError(log.errorMessage ?? 'Generation failed.');
+      }
     } catch (caught) {
       if ((caught as Error).name !== 'AbortError') {
         setError(caught instanceof Error ? caught.message : 'Generation failed.');
@@ -771,13 +800,15 @@ export default function App() {
         ) : (
           <div className="output-list">
             {output.map((line, index) => (
-              <div key={`${index}-${line.text}`} className={`output-line ${line.invalid ? 'invalid' : ''}`}>
+              <div key={`${index}-${line.text}`} className={`output-line ${line.validation && !line.validation.passed ? 'invalid' : ''}`}>
                 <button type="button" className="icon-button" onClick={() => toggleOutputLock(index)} title={line.locked ? 'Unlock line' : 'Lock line'}>
                   {line.locked ? <Lock size={16} /> : <Unlock size={16} />}
                 </button>
                 <input value={line.text} onChange={(event) => updateOutputLine(index, event.target.value)} />
                 <span className="mono">{phrases[index]?.stressPattern}</span>
-                {line.invalid && <small>{line.validationMessage}</small>}
+                {line.validation && !line.validation.passed && (
+                  <small>{line.validation.failures.map((f) => f.message).join('; ')}</small>
+                )}
               </div>
             ))}
           </div>
