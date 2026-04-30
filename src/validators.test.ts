@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { syllableValidator, lockedWordsValidator, endCollisionValidator, fillerEndingValidator } from './validators';
+import { syllableValidator, lockedWordsValidator, endCollisionValidator, fillerEndingValidator, heldVowelValidator } from './validators';
 import type { Phrase } from './types';
 import { parseLockInput } from './locks';
 
@@ -112,5 +112,46 @@ describe('fillerEndingValidator', () => {
 
   it('passes for non-filler endings', () => {
     expect(fillerEndingValidator('I will see you soon', '')).toBeNull();
+  });
+});
+
+const note = (duration: number): import('./types').AnalyzedNote => ({
+  id: 'n', midi: 60, pitch: 'C4', time: 0, duration, velocity: 0.8,
+  stressScore: 0.5, stress: 'w',
+});
+
+const phraseWith = (durations: number[]): Phrase => ({
+  id: 'p',
+  notes: durations.map(note),
+  syllables: durations.length,
+  stressPattern: '',
+  endingDirection: 'level',
+  startTime: 0,
+  endTime: 0,
+});
+
+describe('heldVowelValidator', () => {
+  it('passes when final note is not held', () => {
+    const phrase = phraseWith([1, 1, 1, 1]); // all equal -> none held
+    expect(heldVowelValidator('I am right here', phrase)).toBeNull();
+  });
+
+  it('passes when final note is held and ends in an open vowel', () => {
+    const phrase = phraseWith([0.25, 0.25, 0.25, 1.5]); // last note held
+    expect(heldVowelValidator('walking far away', phrase)).toBeNull();
+  });
+
+  it('fails when final note is held and ends in a closed vowel', () => {
+    const phrase = phraseWith([0.25, 0.25, 0.25, 1.5]);
+    const result = heldVowelValidator('something I love', phrase);
+    expect(result).toEqual({
+      type: 'held-vowel',
+      message: expect.any(String),
+    });
+  });
+
+  it('passes when final word is unknown (skip)', () => {
+    const phrase = phraseWith([0.25, 0.25, 0.25, 1.5]);
+    expect(heldVowelValidator('whispering xyzzy', phrase)).toBeNull();
   });
 });

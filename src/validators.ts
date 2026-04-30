@@ -2,6 +2,7 @@ import type { Phrase, ValidationFailure, PhraseLockState } from './types';
 import { countSyllables } from './syllables';
 import { validateLockedWords } from './locks';
 import { DEFAULT_FILLER_END_WORDS } from './prompt';
+import { finalVowel, isOpenVowel } from './vowels';
 
 export function syllableValidator(
   line: string,
@@ -81,4 +82,33 @@ export function fillerEndingValidator(
     };
   }
   return null;
+}
+
+function isFinalNoteHeld(phrase: Phrase): boolean {
+  if (phrase.notes.length === 0) return false;
+  const durations = phrase.notes.map((n) => Math.max(n.duration, 0.001));
+  const sorted = [...durations].sort((a, b) => a - b);
+  const median = sorted[Math.floor(sorted.length / 2)] ?? 0.001;
+  const last = durations[durations.length - 1];
+  return last / median >= 1.75;
+}
+
+function lastWord(line: string): string {
+  const tokens = line.trim().split(/\s+/).filter(Boolean);
+  return tokens[tokens.length - 1] ?? '';
+}
+
+export function heldVowelValidator(
+  line: string,
+  phrase: Phrase,
+): ValidationFailure | null {
+  if (!isFinalNoteHeld(phrase)) return null;
+  const word = lastWord(line);
+  const vowel = finalVowel(word);
+  if (vowel === null) return null;
+  if (isOpenVowel(vowel)) return null;
+  return {
+    type: 'held-vowel',
+    message: `final note is held but "${word}" ends in a closed vowel (${vowel})`,
+  };
 }
