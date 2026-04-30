@@ -41,7 +41,7 @@ export async function generateWithOpenAI(prompt: string, apiKey: string, model: 
     body: JSON.stringify({
       model: model || 'gpt-5.5',
       input: prompt,
-      max_output_tokens: 1400,
+      max_output_tokens: 8000,
     }),
   });
 
@@ -52,6 +52,11 @@ export async function generateWithOpenAI(prompt: string, apiKey: string, model: 
 
   const json = await response.json();
   console.debug('[generateWithOpenAI] response JSON:', json);
+
+  if (json.status === 'incomplete') {
+    const reason = json.incomplete_details?.reason ?? 'unknown';
+    throw new Error(`OpenAI returned incomplete response (reason: ${reason}). Try a smaller model, simpler prompt, or split the request.`);
+  }
 
   const direct = typeof json.output_text === 'string' ? json.output_text.trim() : '';
   const fromArray = (json.output ?? [])
