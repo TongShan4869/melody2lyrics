@@ -30,3 +30,31 @@ export function lockedWordsValidator(
     message: result.message ?? 'locked-word mismatch',
   };
 }
+
+function endWord(line: string): string {
+  const tokens = line.trim().toLowerCase().split(/\s+/);
+  const last = tokens[tokens.length - 1] ?? '';
+  return last.replace(/[^a-z']/g, '');
+}
+
+export function endCollisionValidator(
+  lines: string[],
+  sectionLabels: string[],
+  index: number,
+): ValidationFailure | null {
+  const section = sectionLabels[index] ?? '';
+  const target = endWord(lines[index] ?? '');
+  if (!target) return null;
+
+  for (let i = 0; i < lines.length; i += 1) {
+    if (i === index) continue;
+    if ((sectionLabels[i] ?? '') !== section) continue;
+    if (endWord(lines[i] ?? '') === target) {
+      return {
+        type: 'end-collision',
+        message: `ends in "${target}" — collides with line ${i + 1}`,
+      };
+    }
+  }
+  return null;
+}

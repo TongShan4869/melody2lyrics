@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { syllableValidator, lockedWordsValidator } from './validators';
+import { syllableValidator, lockedWordsValidator, endCollisionValidator } from './validators';
 import type { Phrase } from './types';
 import { parseLockInput } from './locks';
 
@@ -56,5 +56,43 @@ describe('lockedWordsValidator', () => {
   it('passes when there are no locked words', () => {
     const lock = parseLockInput('', 0);
     expect(lockedWordsValidator('anything goes here', lock)).toBeNull();
+  });
+});
+
+describe('endCollisionValidator', () => {
+  it('passes when section lines have unique end words', () => {
+    const lines = ['I see the rain', 'falling on me', 'taking it slow'];
+    const sections = ['Verse 1', 'Verse 1', 'Verse 1'];
+    expect(endCollisionValidator(lines, sections, 0)).toBeNull();
+    expect(endCollisionValidator(lines, sections, 1)).toBeNull();
+    expect(endCollisionValidator(lines, sections, 2)).toBeNull();
+  });
+
+  it('fails when two lines in the same section share their end word', () => {
+    const lines = ['into the night', 'shining so bright', 'wide awake tonight'];
+    const sections = ['Verse 1', 'Verse 1', 'Verse 1'];
+    const result = endCollisionValidator(lines, sections, 2);
+    expect(result).toBeNull();
+    const a = endCollisionValidator([
+      'falling for you',
+      'reaching for you',
+    ], ['Verse 1', 'Verse 1'], 1);
+    expect(a).toEqual({
+      type: 'end-collision',
+      message: expect.stringContaining('you'),
+    });
+  });
+
+  it('does not flag collisions across different sections', () => {
+    const lines = ['falling for you', 'reaching for you'];
+    const sections = ['Verse 1', 'Chorus 1'];
+    expect(endCollisionValidator(lines, sections, 1)).toBeNull();
+  });
+
+  it('strips punctuation and is case-insensitive', () => {
+    const lines = ['I am here.', 'You are HERE!'];
+    const sections = ['Verse 1', 'Verse 1'];
+    const result = endCollisionValidator(lines, sections, 1);
+    expect(result?.type).toBe('end-collision');
   });
 });
