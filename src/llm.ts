@@ -21,7 +21,13 @@ export async function generateWithAnthropic(prompt: string, apiKey: string, mode
   }
 
   const json = await response.json();
-  return json.content?.map((part: { type: string; text?: string }) => part.type === 'text' ? part.text : '').join('\n').trim() ?? '';
+  console.debug('[generateWithAnthropic] response JSON:', json);
+
+  const extracted = json.content?.map((part: { type: string; text?: string }) => part.type === 'text' ? part.text : '').join('\n').trim() ?? '';
+  if (!extracted) {
+    throw new Error(`Anthropic returned no extractable text. Response: ${JSON.stringify(json).slice(0, 500)}`);
+  }
+  return extracted;
 }
 
 export async function generateWithOpenAI(prompt: string, apiKey: string, model: string, signal?: AbortSignal): Promise<string> {
@@ -45,13 +51,20 @@ export async function generateWithOpenAI(prompt: string, apiKey: string, model: 
   }
 
   const json = await response.json();
-  if (typeof json.output_text === 'string') return json.output_text.trim();
+  console.debug('[generateWithOpenAI] response JSON:', json);
 
-  return (json.output ?? [])
+  const direct = typeof json.output_text === 'string' ? json.output_text.trim() : '';
+  const fromArray = (json.output ?? [])
     .flatMap((item: { content?: Array<{ type: string; text?: string }> }) => item.content ?? [])
     .map((part: { type: string; text?: string }) => part.type === 'output_text' || part.type === 'text' ? part.text ?? '' : '')
     .join('\n')
     .trim();
+
+  const extracted = direct || fromArray;
+  if (!extracted) {
+    throw new Error(`OpenAI returned no extractable text. Response: ${JSON.stringify(json).slice(0, 500)}`);
+  }
+  return extracted;
 }
 
 export async function generateWithDeepSeek(prompt: string, apiKey: string, model: string, signal?: AbortSignal): Promise<string> {
@@ -76,5 +89,11 @@ export async function generateWithDeepSeek(prompt: string, apiKey: string, model
   }
 
   const json = await response.json();
-  return json.choices?.map((choice: { message?: { content?: string } }) => choice.message?.content ?? '').join('\n').trim() ?? '';
+  console.debug('[generateWithDeepSeek] response JSON:', json);
+
+  const extracted = json.choices?.map((choice: { message?: { content?: string } }) => choice.message?.content ?? '').join('\n').trim() ?? '';
+  if (!extracted) {
+    throw new Error(`DeepSeek returned no extractable text. Response: ${JSON.stringify(json).slice(0, 500)}`);
+  }
+  return extracted;
 }
