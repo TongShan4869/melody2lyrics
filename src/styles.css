@@ -635,8 +635,12 @@ label {
 
 .output-line {
   display: grid;
-  grid-template-columns: 38px minmax(0, 1fr) auto;
-  gap: 10px;
+  grid-template-columns: 38px 28px minmax(0, 1fr);
+  grid-template-areas:
+    "lock badge input"
+    ".    .     stress"
+    ".    .     errors";
+  gap: 8px 10px;
   border: 1px solid var(--color-border);
   border-radius: 8px;
   padding: 10px;
@@ -647,9 +651,21 @@ label {
   border-color: var(--color-danger);
 }
 
+.output-line .icon-button { grid-area: lock; }
+.output-line .line-badge { grid-area: badge; margin-right: 0; }
+.output-line input { grid-area: input; min-width: 0; }
+.output-line .mono {
+  grid-area: stress;
+  font-size: 0.78em;
+  color: var(--color-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
 .output-line small {
-  grid-column: 2 / -1;
+  grid-area: errors;
   color: var(--color-danger);
+  font-size: 0.85em;
 }
 
 .icon-button {
