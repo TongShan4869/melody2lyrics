@@ -1,411 +1,220 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
-import { Clipboard, Download, FileMusic, Lock, Pause, Play, Unlock, Wand2, XCircle } from 'lucide-react';
-import { parseMidiFile } from './midi';
+import { Fragment, useEffect, useMemo, useRef, useState } from 'react';
+import { buildSampleMelody, parseMidiFile, type SampleMelody } from './midi';
 import { analyzeNotes, mergePhrases, splitPhrase } from './prosody';
 import { buildPrompt } from './prompt';
 import { parseLockInput } from './locks';
 import { generateWithAnthropic, generateWithDeepSeek, generateWithOpenAI } from './llm';
-import type { GeneratedLine, IterationLog, LineValidation, LockPolicy, LyricsContext, MidiFileInfo, Note, Phrase, PhraseLockState, PhraseOrigin } from './types';
+import { detectSections } from './structure';
 import { runPipeline } from './agent';
-import { PhraseRow } from './components/PhraseRow';
+import { countSyllables, splitLineSyllables } from './syllables';
 import { melodyDuration, schedulePreview, type PlaybackHandle } from './playback';
-import { detectClusters, detectSections } from './structure';
+import type {
+  GeneratedLine,
+  IterationLog,
+  LockPolicy,
+  LyricsContext,
+  MidiFileInfo,
+  Note,
+  ParsedMidi,
+  Phrase,
+} from './types';
+import { I } from './components/Icons';
+import { PianoRoll } from './components/PianoRoll';
+import {
+  applyTheme,
+  TweakRadio,
+  TweakSection,
+  TweakSelect,
+  TweakToggle,
+  TweaksPanel,
+  useTweaks,
+} from './components/TweaksPanel';
+
+const DIRECTION_TEMPLATE = `Theme:
+Mood:
+Genre:
+Point of view: first person
+
+Must include:
+Avoid: clichés, forced rhymes
+
+Other notes:
+`;
+
+const STYLE_TAGS = [
+  'indie folk', 'bedroom pop', 'R&B', 'soul', 'alt rock', 'synth-pop', 'singer-songwriter',
+  'female vocal', 'male vocal', 'breathy', 'belted chorus', 'falsetto',
+  'melancholy', 'tender', 'wistful', 'defiant', 'dreamy', 'bittersweet',
+  'fingerpicked acoustic', 'analog synths', 'lush reverb', 'minimal arrangement',
+];
+
+const SECTION_OPTIONS = ['Verse', 'Pre-chorus', 'Chorus', 'Post-chorus', 'Rap verse', 'Bridge', 'Intro', 'Outro'];
+
+type LlmProvider = 'anthropic' | 'openai' | 'deepseek';
 
 const initialContext: LyricsContext = {
-  theme: '',
-  mood: '',
-  genre: '',
-  pov: '',
-  otherNotes: '',
-  mustInclude: '',
-  avoid: '',
-  rhymeScheme: 'SECTION',
-  strictSyllables: true,
+  direction: DIRECTION_TEMPLATE,
+  theme: '', mood: '', genre: '', pov: '',
+  otherNotes: '', mustInclude: '', avoid: '',
+  rhymeScheme: 'SECTION', strictSyllables: false,
 };
 
-const sectionOptions = ['Intro', 'Verse', 'Rap verse', 'Pre-chorus', 'Chorus', 'Post-chorus', 'Rap break', 'Bridge', 'Outro', 'Ad-lib'];
-const sectionRepeatOptions = ['', '1', '2', '3', '4', '5', '6', '7', '8', '9', '10', '11', '12'];
-const CUSTOM_SECTION = '__custom_section__';
-const CUSTOM_RHYME = '__custom_rhyme__';
-
-type LlmProvider = 'openai' | 'anthropic' | 'deepseek';
-const CUSTOM_MODEL = '__custom__';
-
-const modelOptions: Record<LlmProvider, Array<{ value: string; label: string }>> = {
-  openai: [
-    { value: 'gpt-5.5', label: 'GPT-5.5' },
-    { value: 'gpt-5.4', label: 'GPT-5.4' },
-    { value: 'gpt-5.4-mini', label: 'GPT-5.4 mini' },
-    { value: 'gpt-5.4-nano', label: 'GPT-5.4 nano' },
-    { value: CUSTOM_MODEL, label: 'Custom model ID' },
-  ],
-  anthropic: [
-    { value: 'claude-opus-4-7', label: 'Claude Opus 4.7' },
-    { value: 'claude-sonnet-4-6', label: 'Claude Sonnet 4.6' },
-    { value: 'claude-haiku-4-5-20251001', label: 'Claude Haiku 4.5' },
-    { value: CUSTOM_MODEL, label: 'Custom model ID' },
-  ],
-  deepseek: [
-    { value: 'deepseek-v4-flash', label: 'DeepSeek V4 Flash' },
-    { value: 'deepseek-v4-pro', label: 'DeepSeek V4 Pro' },
-    { value: 'deepseek-chat', label: 'DeepSeek Chat legacy' },
-    { value: 'deepseek-reasoner', label: 'DeepSeek Reasoner legacy' },
-    { value: CUSTOM_MODEL, label: 'Custom model ID' },
-  ],
-};
-
-function providerLabel(provider: LlmProvider): string {
-  if (provider === 'anthropic') return 'Anthropic';
-  if (provider === 'deepseek') return 'DeepSeek';
-  return 'OpenAI';
+function fmtTime(seconds: number): string {
+  const safe = Math.max(0, seconds);
+  const m = Math.floor(safe / 60);
+  const s = Math.floor(safe % 60).toString().padStart(2, '0');
+  return `${m}:${s}`;
 }
 
-function formatTime(seconds: number): string {
-  const safeSeconds = Math.max(0, seconds);
-  const minutes = Math.floor(safeSeconds / 60);
-  const remainder = Math.floor(safeSeconds % 60).toString().padStart(2, '0');
-  return `${minutes}:${remainder}`;
-}
-
-function defaultSectionLabels(count: number): string[] {
-  return Array.from({ length: count }, () => 'Verse 1');
-}
-
-function parseSectionLabel(label: string): { type: string; repeat: string } {
-  const trimmed = label.trim();
-  const match = trimmed.match(/^(.*?)(?:\s+(\d+))?$/);
-  return {
-    type: match?.[1]?.trim() || '',
-    repeat: match?.[2] ?? '',
-  };
-}
-
-function formatSectionLabel(type: string, repeat: string): string {
-  const cleanType = type.trim();
-  const cleanRepeat = repeat.trim();
-  if (!cleanType) return cleanRepeat ? `Section ${cleanRepeat}` : '';
-  return cleanRepeat ? `${cleanType} ${cleanRepeat}` : cleanType;
-}
-
-function nextSectionLabel(label: string): string {
-  const parsed = parseSectionLabel(label);
-  const type = parsed.type || 'Section';
-  const repeat = Number.parseInt(parsed.repeat || '1', 10);
-  return formatSectionLabel(type, String(Number.isFinite(repeat) ? repeat + 1 : 2));
-}
-
-function rhymeModeValue(rhymeScheme: string): string {
-  const normalized = rhymeScheme.trim().toUpperCase();
-  if (normalized === 'SECTION' || normalized === 'FREE') return normalized;
-  return CUSTOM_RHYME;
-}
-
-function syncSectionLabels(existing: string[], count: number): string[] {
-  const defaults = defaultSectionLabels(count);
-  return Array.from({ length: count }, (_, index) => existing[index] ?? defaults[index] ?? '');
-}
-
-function sectionEndIndex(labels: string[], startIndex: number, totalCount: number): number {
-  const label = labels[startIndex] ?? '';
-  let endIndex = startIndex + 1;
-  while (endIndex < totalCount && (labels[endIndex] ?? '') === label) {
-    endIndex += 1;
-  }
-  return endIndex;
-}
-
-function SectionMarker({
-  label,
-  lineStart,
-  lineEnd,
-  canRemove,
-  onChange,
-  onRemove,
-}: {
-  label: string;
-  lineStart: number;
-  lineEnd: number;
-  canRemove: boolean;
-  onChange: (value: string) => void;
-  onRemove: () => void;
-}) {
-  const parsedLabel = parseSectionLabel(label);
-  const isPresetSection = sectionOptions.includes(parsedLabel.type);
-  const selectValue = isPresetSection ? parsedLabel.type : CUSTOM_SECTION;
-  const lineRange = lineStart === lineEnd ? `Line ${lineStart}` : `Lines ${lineStart}-${lineEnd}`;
-
-  return (
-    <div className="section-marker">
-      <div>
-        <span className="eyebrow">Section marker</span>
-        <strong>{lineRange}</strong>
-      </div>
-      <label className="section-label">
-        <span>Type</span>
-        <div className="section-control">
-          <select
-            value={selectValue}
-            onChange={(event) => {
-              const nextValue = event.target.value;
-              onChange(formatSectionLabel(nextValue === CUSTOM_SECTION ? '' : nextValue, parsedLabel.repeat));
-            }}
-          >
-            {sectionOptions.map((option) => (
-              <option key={option} value={option}>{option}</option>
-            ))}
-            <option value={CUSTOM_SECTION}>Custom...</option>
-          </select>
-          {selectValue === CUSTOM_SECTION && (
-            <input
-              value={parsedLabel.type}
-              placeholder="Custom section"
-              onChange={(event) => onChange(formatSectionLabel(event.target.value, parsedLabel.repeat))}
-            />
-          )}
-        </div>
-      </label>
-      <label className="section-label repeat-label">
-        <span>Repeat</span>
-        <select value={parsedLabel.repeat} onChange={(event) => onChange(formatSectionLabel(parsedLabel.type, event.target.value))}>
-          {sectionRepeatOptions.map((option) => (
-            <option key={option || 'none'} value={option}>{option || '-'}</option>
-          ))}
-        </select>
-      </label>
-      <button type="button" className="ghost small" disabled={!canRemove} onClick={onRemove}>Remove marker</button>
-    </div>
-  );
-}
-
-function InfoLabel({ label, info }: { label: string; info: string }) {
-  return (
-    <span className="field-label">
-      <span>{label}</span>
-      <span className="info-bubble" tabIndex={0} aria-label={`${label}: ${info}`}>
-        <span aria-hidden="true">i</span>
-        <span className="tooltip" role="tooltip">{info}</span>
-      </span>
-    </span>
-  );
-}
-
-function IterationLogPanel({ log }: { log: IterationLog }) {
-  const [expanded, setExpanded] = useState(true);
-  if (log.iterations.length === 0 && log.finalStatus === 'idle') return null;
-
-  return (
-    <div className="iteration-log">
-      <button type="button" className="iteration-log-header" onClick={() => setExpanded(!expanded)}>
-        <span>Iteration log</span>
-        <span className="mono">{log.iterations.length} iter · {log.finalStatus}</span>
-      </button>
-      {expanded && (
-        <div className="iteration-log-body">
-          {log.iterations.map((iteration) => {
-            const passed = iteration.validations.filter((v) => v.passed).length;
-            const total = iteration.validations.length;
-            return (
-              <div key={iteration.number} className="iteration-entry">
-                <strong>Iter {iteration.number} · {iteration.kind} · {passed}/{total} passed</strong>
-                {iteration.failingIndices.map((index) => {
-                  const validation = iteration.validations[index];
-                  return (
-                    <div key={index} className="iteration-failure">
-                      Line {index + 1} — {validation.failures.map((f) => f.message).join('; ')}
-                    </div>
-                  );
-                })}
-              </div>
-            );
-          })}
-          {log.finalStatus === 'capped' && <p className="iteration-final">Stopped: hit iteration cap with unresolved lines.</p>}
-          {log.finalStatus === 'clean' && <p className="iteration-final">Stopped: clean.</p>}
-          {log.finalStatus === 'error' && <p className="iteration-final">Stopped: {log.errorMessage}</p>}
-        </div>
-      )}
-    </div>
-  );
+function defaultModelFor(provider: LlmProvider): string {
+  if (provider === 'anthropic') return 'claude-sonnet-4-6';
+  if (provider === 'openai') return 'gpt-5.5';
+  return 'deepseek-v4-flash';
 }
 
 export default function App() {
+  const [tweaks, setTweak] = useTweaks();
+
+  // Data state
   const [fileName, setFileName] = useState('');
   const [midiInfo, setMidiInfo] = useState<MidiFileInfo | null>(null);
   const [notes, setNotes] = useState<Note[]>([]);
   const [phrases, setPhrases] = useState<Phrase[]>([]);
-  const [locks, setLocks] = useState<PhraseLockState[]>([]);
+  const [locks, setLocks] = useState(() => [] as ReturnType<typeof parseLockInput>[]);
   const [sectionLabels, setSectionLabels] = useState<string[]>([]);
-  const [phraseOrigins, setPhraseOrigins] = useState<PhraseOrigin[]>([]);
+  const [selectedPhraseId, setSelectedPhraseId] = useState<string | null>(null);
   const [context, setContext] = useState<LyricsContext>(initialContext);
-  const [llmProvider, setLlmProvider] = useState<LlmProvider>('openai');
-  const [apiKey, setApiKey] = useState('');
-  const [openAIModel, setOpenAIModel] = useState('gpt-5.5');
-  const [anthropicModel, setAnthropicModel] = useState('claude-opus-4-7');
-  const [deepSeekModel, setDeepSeekModel] = useState('deepseek-v4-flash');
-  const [customModel, setCustomModel] = useState('');
-  const [promptVisible, setPromptVisible] = useState(true);
   const [output, setOutput] = useState<GeneratedLine[]>([]);
-  const [iterationLog, setIterationLog] = useState<IterationLog>({ iterations: [], finalStatus: 'idle' });
   const [error, setError] = useState('');
-  const [copyStatus, setCopyStatus] = useState('');
+  const [toast, setToast] = useState('');
   const [isGenerating, setIsGenerating] = useState(false);
   const [isPlaying, setIsPlaying] = useState(false);
   const [playheadTime, setPlayheadTime] = useState(0);
-  const [previewStartTime, setPreviewStartTime] = useState(0);
-  const [previewEndTime, setPreviewEndTime] = useState(0);
-  const [playingPhraseId, setPlayingPhraseId] = useState<string | null>(null);
+  const [llmProvider, setLlmProvider] = useState<LlmProvider>('anthropic');
+  const [apiKey, setApiKey] = useState('');
+  const [model, setModel] = useState(defaultModelFor('anthropic'));
+
   const abortRef = useRef<AbortController | null>(null);
-  const audioContextRef = useRef<AudioContext | null>(null);
+  const audioRef = useRef<AudioContext | null>(null);
   const playbackRef = useRef<PlaybackHandle | null>(null);
-  const playbackStartTimeRef = useRef(0);
-  const animationRef = useRef<number | null>(null);
+  const playStartRef = useRef(0);
+  const animRef = useRef<number | null>(null);
+  const playGenRef = useRef(0);
 
-  const phraseClusters = useMemo(() => detectClusters(phrases), [phrases]);
-  const [recurrenceHint, setRecurrenceHint] = useState<{ startIndex: number; targets: number[]; label: string } | null>(null);
+  // Theme + tweaks application
+  useEffect(() => { applyTheme(tweaks.theme); }, [tweaks.theme]);
+  useEffect(() => {
+    document.documentElement.style.setProperty('--display', `"${tweaks.fontDisplay}", Georgia, serif`);
+  }, [tweaks.fontDisplay]);
+  useEffect(() => {
+    document.body.style.fontSize = tweaks.density === 'compact' ? '13px' : '14px';
+  }, [tweaks.density]);
 
-  const effectiveLocks = useMemo(() => locks.map((lock, index) => {
-    const lockedOutput = output[index];
-    if (!lockedOutput?.locked) return lock;
-    return {
-      ...parseLockInput(lockedOutput.text, index, 'strict'),
-      lockedAfterGeneration: true,
-    };
-  }), [locks, output]);
-  const prompt = useMemo(() => buildPrompt(phrases, effectiveLocks, context, sectionLabels), [phrases, effectiveLocks, context, sectionLabels]);
-  const strictMismatch = effectiveLocks.some((lock, index) => (
+  // Computed
+  const selectedPhraseIdx = phrases.findIndex((p) => p.id === selectedPhraseId);
+  const selectedPhrase = selectedPhraseIdx >= 0 ? phrases[selectedPhraseIdx] : null;
+  const selectedLock = selectedPhraseIdx >= 0 ? locks[selectedPhraseIdx] : null;
+
+  const effectiveLocks = useMemo(
+    () => locks.map((lock, i) => {
+      const o = output[i];
+      if (!o?.locked) return lock;
+      return { ...parseLockInput(o.text, i, 'strict'), lockedAfterGeneration: true };
+    }),
+    [locks, output],
+  );
+
+  const prompt = useMemo(
+    () => (phrases.length ? buildPrompt(phrases, effectiveLocks, context, sectionLabels) : ''),
+    [phrases, effectiveLocks, context, sectionLabels],
+  );
+
+  const strictMismatch = effectiveLocks.some((lock, i) => (
     !lock.lockedAfterGeneration
     && lock.policy === 'strict'
-    && lock.rawInput.trim()
-    && lock.totalSyllables !== phrases[index]?.syllables
+    && lock.rawInput.trim() !== ''
+    && lock.totalSyllables !== phrases[i]?.syllables
   ));
-  const canGenerate = phrases.length > 0 && !strictMismatch && !isGenerating;
-  const duration = useMemo(() => melodyDuration(notes), [notes]);
-  const previewDuration = Math.max(0, previewEndTime - previewStartTime);
-  const activeNoteIds = useMemo(() => {
-    if (!isPlaying) return new Set<string>();
-    return new Set(notes
-      .filter((note) => playheadTime >= note.time && playheadTime <= note.time + note.duration)
-      .map((note) => note.id));
-  }, [isPlaying, notes, playheadTime]);
 
-  useEffect(() => () => stopPreview(), []);
+  const totalDuration = useMemo(() => melodyDuration(notes), [notes]);
+
+  const step1Done = phrases.length > 0;
+  const currentStep = output.length > 0 ? 3 : (step1Done ? 2 : 1);
+
+  // Toasts
   useEffect(() => {
-    if (!copyStatus) return;
-    const timeout = window.setTimeout(() => setCopyStatus(''), 2200);
-    return () => window.clearTimeout(timeout);
-  }, [copyStatus]);
+    if (!toast) return;
+    const t = window.setTimeout(() => setToast(''), 2200);
+    return () => window.clearTimeout(t);
+  }, [toast]);
 
-  async function handleFile(file: File) {
+  // Playback teardown on unmount
+  useEffect(() => () => stopPreview(), []);
+
+  // Auto-follow playhead during playback
+  useEffect(() => {
+    if (!isPlaying || phrases.length === 0) return;
+    const cur = phrases.find((p) => playheadTime >= p.startTime && playheadTime <= p.endTime);
+    if (cur && cur.id !== selectedPhraseId) setSelectedPhraseId(cur.id);
+  }, [isPlaying, playheadTime, phrases, selectedPhraseId]);
+
+  function setupMelody(parsed: ParsedMidi, name: string) {
+    const analyzed = analyzeNotes(parsed.notes);
+    const detected = detectSections(analyzed);
+    setFileName(name);
+    setMidiInfo(parsed.info);
+    setNotes(parsed.notes);
+    setPhrases(analyzed);
+    setLocks(analyzed.map((_, i) => parseLockInput('', i)));
+    setSectionLabels(detected.length ? detected : analyzed.map((_, i) => (i === 0 ? 'Verse 1' : '')));
+    setSelectedPhraseId(analyzed[0]?.id ?? null);
+    setOutput([]);
+    setPlayheadTime(0);
+    stopPreview();
+  }
+
+  async function handleFile(file: File | null | undefined) {
     setError('');
+    if (!file) return;
     if (file.size > 10 * 1024 * 1024) {
-      setError('File is over the 10 MB cap.');
+      setError('File is over the 10 MB limit.');
       return;
     }
-
     if (!/\.(mid|midi)$/i.test(file.name)) {
-      setError('MIDI is implemented in this first build. Audio upload is reserved for the Basic Pitch pass.');
+      setError('Only .mid / .midi supported in this build.');
       return;
     }
-
     try {
       const parsed = await parseMidiFile(file);
-      const analyzed = analyzeNotes(parsed.notes);
-      setFileName(file.name);
-      setMidiInfo(parsed.info);
-      setNotes(parsed.notes);
-      setPhrases(analyzed);
-      setLocks(analyzed.map((_, index) => parseLockInput('', index)));
-      setSectionLabels(detectSections(analyzed));
-      setPhraseOrigins(analyzed.map(() => 'auto'));
-      setOutput([]);
-      setPlayheadTime(0);
-      setPreviewStartTime(0);
-      setPreviewEndTime(melodyDuration(parsed.notes));
-      setPlayingPhraseId(null);
-      stopPreview();
-    } catch (caught) {
-      setError(caught instanceof Error ? caught.message : 'Could not parse the file.');
+      setupMelody(parsed, file.name);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Could not parse the MIDI file.');
     }
   }
 
-  function updatePhrases(nextPhrases: Phrase[], nextSectionLabels?: string[], nextOrigins?: PhraseOrigin[]) {
-    setPhrases(nextPhrases);
-    setLocks((existing) => nextPhrases.map((_, index) => existing[index] ?? parseLockInput('', index)));
-    setSectionLabels((existing) => syncSectionLabels(nextSectionLabels ?? existing, nextPhrases.length));
-    setPhraseOrigins(nextOrigins ?? nextPhrases.map(() => 'manual'));
+  function loadSample() {
+    const sample: SampleMelody = buildSampleMelody();
+    setupMelody(sample, sample.fileName);
   }
 
-  function handleSectionMarkerChange(startIndex: number, value: string) {
-    setSectionLabels((existing) => {
-      const synced = syncSectionLabels(existing, phrases.length);
-      const endIndex = sectionEndIndex(synced, startIndex, phrases.length);
-      const next = synced.map((label, index) =>
-        index >= startIndex && index < endIndex ? value : label,
-      );
-
-      const clusterId = phraseClusters[startIndex];
-      if (clusterId !== undefined) {
-        const targets = phraseClusters
-          .map((id, index) => ({ id, index }))
-          .filter(({ id, index }) =>
-            id === clusterId
-            && (index < startIndex || index >= endIndex)
-            && next[index] !== value,
-          )
-          .map(({ index }) => index);
-        if (targets.length > 0) {
-          setRecurrenceHint({ startIndex, targets, label: value });
-        } else {
-          setRecurrenceHint(null);
-        }
-      }
-
-      return next;
-    });
+  // Playback
+  async function ensureCtx(): Promise<AudioContext> {
+    const Ctx = window.AudioContext;
+    const ac = audioRef.current ?? new Ctx();
+    audioRef.current = ac;
+    await ac.resume();
+    return ac;
   }
 
-  function handleAddSectionMarker(index: number) {
-    setSectionLabels((existing) => {
-      const synced = syncSectionLabels(existing, phrases.length);
-      if (index <= 0 || synced[index] !== synced[index - 1]) return synced;
-      const endIndex = sectionEndIndex(synced, index, phrases.length);
-      const label = nextSectionLabel(synced[index - 1] ?? synced[index] ?? 'Section 1');
-      return synced.map((existingLabel, labelIndex) => (labelIndex >= index && labelIndex < endIndex ? label : existingLabel));
-    });
-  }
-
-  function handleRemoveSectionMarker(index: number) {
-    setSectionLabels((existing) => {
-      const synced = syncSectionLabels(existing, phrases.length);
-      if (index <= 0) return synced;
-      const previousLabel = synced[index - 1] ?? '';
-      const endIndex = sectionEndIndex(synced, index, phrases.length);
-      return synced.map((label, labelIndex) => (labelIndex >= index && labelIndex < endIndex ? previousLabel : label));
-    });
-  }
-
-  function handleLockInputChange(index: number, value: string) {
-    setLocks((existing) => existing.map((lock, lockIndex) => lockIndex === index ? parseLockInput(value, index, lock.policy) : lock));
-  }
-
-  function handlePolicyChange(index: number, policy: LockPolicy) {
-    setLocks((existing) => existing.map((lock, lockIndex) => lockIndex === index ? { ...lock, policy } : lock));
-  }
-
-  function handleClearLock(index: number) {
-    setLocks((existing) => existing.map((lock, lockIndex) => lockIndex === index ? parseLockInput('', index, lock.policy) : lock));
-  }
-
-  function handleSplit(phraseIndex: number, noteIndex: number) {
-    const nextSectionLabels = [
-      ...sectionLabels.slice(0, phraseIndex + 1),
-      sectionLabels[phraseIndex] ?? '',
-      ...sectionLabels.slice(phraseIndex + 1),
-    ];
-    updatePhrases(splitPhrase(phrases, phraseIndex, noteIndex), nextSectionLabels);
-  }
-
-  function handleMerge(phraseIndex: number) {
-    updatePhrases(mergePhrases(phrases, phraseIndex), sectionLabels.filter((_, index) => index !== phraseIndex + 1));
+  function stopPreview() {
+    playGenRef.current += 1;
+    playbackRef.current?.stop();
+    playbackRef.current = null;
+    if (animRef.current != null) {
+      cancelAnimationFrame(animRef.current);
+      animRef.current = null;
+    }
+    setIsPlaying(false);
   }
 
   async function togglePreview() {
@@ -413,189 +222,128 @@ export default function App() {
       stopPreview();
       return;
     }
-
-    await playPreviewSegment(notes, 0, duration, null);
-  }
-
-  async function playPhrasePreview(phrase: Phrase) {
-    if (isPlaying && playingPhraseId === phrase.id) {
-      stopPreview();
-      return;
-    }
-
-    await playPreviewSegment(phrase.notes, phrase.startTime, phrase.endTime, phrase.id);
-  }
-
-  async function playPreviewSegment(segmentNotes: Note[], startTime: number, endTime: number, phraseId: string | null) {
-    stopPreview(false);
-    if (!segmentNotes.length) return;
-
-    const AudioContextClass = window.AudioContext;
-    const audioContext = audioContextRef.current ?? new AudioContextClass();
-    audioContextRef.current = audioContext;
-    await audioContext.resume();
-
-    const segmentDuration = Math.max(0, endTime - startTime);
-    setPlayheadTime(startTime);
-    setPreviewStartTime(startTime);
-    setPreviewEndTime(endTime);
-    setPlayingPhraseId(phraseId);
-    playbackRef.current = schedulePreview(segmentNotes, audioContext, startTime);
-    playbackStartTimeRef.current = performance.now();
+    if (!notes.length) return;
+    const myGen = ++playGenRef.current;
+    const ac = await ensureCtx();
+    if (myGen !== playGenRef.current) return;
+    setPlayheadTime(0);
+    playbackRef.current = schedulePreview(notes, ac, 0);
+    playStartRef.current = performance.now();
     setIsPlaying(true);
-
     const tick = () => {
-      const elapsed = (performance.now() - playbackStartTimeRef.current) / 1000;
-      if (elapsed >= segmentDuration) {
-        setPlayheadTime(endTime);
-        stopPreview(false);
+      if (myGen !== playGenRef.current) return;
+      const elapsed = (performance.now() - playStartRef.current) / 1000;
+      if (elapsed >= totalDuration) {
+        stopPreview();
         return;
       }
-      setPlayheadTime(startTime + elapsed);
-      animationRef.current = requestAnimationFrame(tick);
+      setPlayheadTime(elapsed);
+      animRef.current = requestAnimationFrame(tick);
     };
-
-    animationRef.current = requestAnimationFrame(tick);
+    animRef.current = requestAnimationFrame(tick);
   }
 
-  function stopPreview(resetPlayhead = true) {
-    playbackRef.current?.stop();
-    playbackRef.current = null;
-    if (animationRef.current != null) {
-      cancelAnimationFrame(animationRef.current);
-      animationRef.current = null;
-    }
-    setIsPlaying(false);
-    setPlayingPhraseId(null);
-    if (resetPlayhead) setPlayheadTime(0);
-  }
-
-  function lockAll() {
-    setOutput((existing) => existing.map((line) => ({ ...line, locked: true })));
-  }
-
-  function unlockAll() {
-    setOutput((existing) => existing.map((line) => ({ ...line, locked: false })));
-  }
-
-  function clearLocks() {
-    setLocks(phrases.map((_, index) => parseLockInput('', index)));
-    setOutput((existing) => existing.map((line) => ({ ...line, locked: false })));
-  }
-
-  async function copyToClipboard(text: string, successMessage: string) {
-    if (!text.trim()) {
-      setCopyStatus('Nothing to copy yet.');
-      return;
-    }
-
-    try {
-      if (navigator.clipboard?.writeText) {
-        await navigator.clipboard.writeText(text);
-      } else {
-        fallbackCopy(text);
+  async function previewPhrase(phraseIdx: number) {
+    stopPreview();
+    const phrase = phrases[phraseIdx];
+    if (!phrase || !phrase.notes.length) return;
+    const myGen = ++playGenRef.current;
+    const ac = await ensureCtx();
+    if (myGen !== playGenRef.current) return;
+    setPlayheadTime(phrase.startTime);
+    playbackRef.current = schedulePreview(phrase.notes, ac, phrase.startTime);
+    playStartRef.current = performance.now() - phrase.startTime * 1000;
+    setIsPlaying(true);
+    setSelectedPhraseId(phrase.id);
+    const tick = () => {
+      if (myGen !== playGenRef.current) return;
+      const elapsed = (performance.now() - playStartRef.current) / 1000;
+      if (elapsed >= phrase.endTime) {
+        stopPreview();
+        setPlayheadTime(0);
+        return;
       }
-      setCopyStatus(successMessage);
-    } catch {
-      try {
-        fallbackCopy(text);
-        setCopyStatus(successMessage);
-      } catch {
-        setCopyStatus('Copy failed. Select the text manually.');
+      setPlayheadTime(elapsed);
+      animRef.current = requestAnimationFrame(tick);
+    };
+    animRef.current = requestAnimationFrame(tick);
+  }
+
+  async function seekAndPlay(time: number) {
+    stopPreview();
+    if (!notes.length) return;
+    const t = Math.max(0, Math.min(totalDuration, time));
+    const myGen = ++playGenRef.current;
+    const ac = await ensureCtx();
+    if (myGen !== playGenRef.current) return;
+    setPlayheadTime(t);
+    playbackRef.current = schedulePreview(notes, ac, t);
+    playStartRef.current = performance.now() - t * 1000;
+    setIsPlaying(true);
+    const tick = () => {
+      if (myGen !== playGenRef.current) return;
+      const elapsed = (performance.now() - playStartRef.current) / 1000;
+      if (elapsed >= totalDuration) {
+        stopPreview();
+        return;
       }
-    }
+      setPlayheadTime(elapsed);
+      animRef.current = requestAnimationFrame(tick);
+    };
+    animRef.current = requestAnimationFrame(tick);
   }
 
-  function fallbackCopy(text: string) {
-    const textArea = document.createElement('textarea');
-    textArea.value = text;
-    textArea.setAttribute('readonly', 'true');
-    textArea.style.position = 'fixed';
-    textArea.style.left = '-9999px';
-    textArea.style.top = '0';
-    document.body.appendChild(textArea);
-    textArea.focus();
-    textArea.select();
-    const didCopy = document.execCommand('copy');
-    document.body.removeChild(textArea);
-    if (!didCopy) throw new Error('Fallback copy failed');
+  // Editing
+  function updateLockText(idx: number, value: string) {
+    setLocks((cur) => cur.map((l, i) => (i === idx ? parseLockInput(value, i, l.policy) : l)));
+  }
+  function updateLockPolicy(idx: number, policy: LockPolicy) {
+    setLocks((cur) => cur.map((l, i) => (i === idx ? { ...l, policy } : l)));
+  }
+  function clearLock(idx: number) {
+    setLocks((cur) => cur.map((l, i) => (i === idx ? parseLockInput('', i, l.policy) : l)));
+  }
+  function handleSplit(pIdx: number, nIdx: number) {
+    const next = splitPhrase(phrases, pIdx, nIdx);
+    if (next === phrases) return;
+    const nextLabels = [...sectionLabels.slice(0, pIdx + 1), '', ...sectionLabels.slice(pIdx + 1)];
+    setPhrases(next);
+    setLocks(next.map((_, i) => locks[i] ?? parseLockInput('', i)));
+    setSectionLabels(nextLabels);
+  }
+  function handleMerge(pIdx: number) {
+    const next = mergePhrases(phrases, pIdx);
+    if (next === phrases) return;
+    setPhrases(next);
+    setLocks(next.map((_, i) => locks[i] ?? parseLockInput('', i)));
+    setSectionLabels(sectionLabels.filter((_, i) => i !== pIdx + 1));
+  }
+  function setSectionAt(idx: number, value: string) {
+    setSectionLabels((cur) => cur.map((s, i) => (i === idx ? value : s)));
   }
 
-  function copyPrompt() {
-    void copyToClipboard(prompt, 'Prompt copied.');
-  }
-
-  function copyLyrics() {
-    void copyToClipboard(output.map((line) => line.text).join('\n'), 'Lyrics copied.');
-  }
-
-  function modelForProvider(provider: LlmProvider): string {
-    if (provider === 'anthropic') return anthropicModel;
-    if (provider === 'deepseek') return deepSeekModel;
-    return openAIModel;
-  }
-
-  function selectedModelForProvider(provider: LlmProvider): string {
-    const selectedModel = modelForProvider(provider);
-    if (selectedModel === CUSTOM_MODEL) return customModel.trim();
-    return selectedModel;
-  }
-
-  function generateForProvider(provider: LlmProvider, promptText: string, key: string, signal?: AbortSignal): Promise<string> {
-    if (provider === 'anthropic') {
-      return generateWithAnthropic(promptText, key, selectedModelForProvider(provider) || 'claude-opus-4-7', signal);
-    }
-
-    if (provider === 'deepseek') {
-      return generateWithDeepSeek(promptText, key, selectedModelForProvider(provider) || 'deepseek-v4-flash', signal);
-    }
-
-    return generateWithOpenAI(promptText, key, selectedModelForProvider(provider) || 'gpt-5.5', signal);
-  }
-
-  function exportText() {
-    const metadata = [
-      '# Melody-to-Lyrics Export',
-      `File: ${fileName || 'untitled'}`,
-      `Date: ${new Date().toISOString()}`,
-      `Tempo: ${midiInfo?.tempos.join(', ') || 'unknown'} BPM`,
-      `Meter: ${midiInfo ? `${midiInfo.timeSignature[0]}/${midiInfo.timeSignature[1]}` : 'unknown'}`,
-      `PPQ: ${midiInfo?.ppq ?? 'unknown'}`,
-      `Prosody: ${phrases.map((phrase, index) => `L${index + 1} ${phrase.syllables} ${phrase.stressPattern}`).join('; ')}`,
-      `Locks: ${effectiveLocks.map((lock, index) => `L${index + 1}: ${lock.rawInput || 'open'}`).join('; ')}`,
-      '',
-    ].join('\n');
-    const blob = new Blob([metadata, output.map((line) => line.text).join('\n') || prompt], { type: 'text/plain' });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.href = url;
-    link.download = `${fileName.replace(/\.[^.]+$/, '') || 'melody'}-lyrics.txt`;
-    link.click();
-    URL.revokeObjectURL(url);
-  }
-
-  async function generateLyrics() {
-    if (!apiKey.trim()) {
-      setError(`Add a ${providerLabel(llmProvider)} API key to generate in-tool, or use Copy prompt.`);
-      return;
-    }
-    if (modelForProvider(llmProvider) === CUSTOM_MODEL && !customModel.trim()) {
-      setError('Enter a custom model ID, or choose a curated model from the dropdown.');
-      return;
-    }
-
+  // Generate via the agentic pipeline
+  async function generate() {
     setIsGenerating(true);
     setError('');
-    setIterationLog({ iterations: [], finalStatus: 'idle' });
+    setOutput((cur) => cur.map((l) => (l.locked ? l : { text: '', locked: false, validation: null, placeholder: true } as GeneratedLine & { placeholder?: boolean })));
     abortRef.current = new AbortController();
 
     const pinnedLines = new Map<number, string>();
-    output.forEach((line, index) => {
-      if (line.locked) pinnedLines.set(index, line.text);
+    output.forEach((line, i) => {
+      if (line.locked) pinnedLines.set(i, line.text);
     });
 
-    const llmCall = (promptText: string, signal?: AbortSignal) =>
-      generateForProvider(llmProvider, promptText, apiKey.trim(), signal);
+    const llmCall = (promptText: string, signal?: AbortSignal): Promise<string> => {
+      const key = apiKey.trim();
+      if (!key) {
+        return Promise.reject(new Error(`Add a ${llmProvider === 'anthropic' ? 'Anthropic' : llmProvider === 'openai' ? 'OpenAI' : 'DeepSeek'} API key.`));
+      }
+      const m = model || defaultModelFor(llmProvider);
+      if (llmProvider === 'anthropic') return generateWithAnthropic(promptText, key, m, signal);
+      if (llmProvider === 'openai') return generateWithOpenAI(promptText, key, m, signal);
+      return generateWithDeepSeek(promptText, key, m, signal);
+    };
 
     try {
       const generator = runPipeline({
@@ -615,304 +363,829 @@ export default function App() {
           log = next.value;
           break;
         }
-        setIterationLog((existing) => ({
-          ...existing,
-          iterations: [...existing.iterations, next.value],
-        }));
       }
 
-      if (log) {
-        setIterationLog(log);
-        const final = log.iterations[log.iterations.length - 1];
-        if (final) {
-          setOutput(final.output.map((text, index) => ({
-            text,
-            locked: pinnedLines.has(index),
-            validation: final.validations[index] ?? null,
-          })));
+      if (!log) return;
+
+      if (log.finalStatus === 'error') {
+        setError(log.errorMessage ?? 'Generation failed.');
+        setOutput((cur) => cur.filter((l) => !(l as GeneratedLine & { placeholder?: boolean }).placeholder));
+        return;
+      }
+
+      const final = log.iterations[log.iterations.length - 1];
+      if (final) {
+        setOutput(final.output.map((text, i) => ({
+          text,
+          locked: pinnedLines.has(i),
+          validation: final.validations[i] ?? null,
+        })));
+        if (log.finalStatus === 'capped') {
+          setToast(`✨ ${final.output.length} lines — some may not perfectly match stress.`);
+        } else {
+          setToast(`✨ ${final.output.length} lines written — review and lock the ones you like`);
         }
-        if (log.finalStatus === 'error') setError(log.errorMessage ?? 'Generation failed.');
       }
-    } catch (caught) {
-      if ((caught as Error).name !== 'AbortError') {
-        setError(caught instanceof Error ? caught.message : 'Generation failed.');
+    } catch (e) {
+      if ((e as Error).name !== 'AbortError') {
+        setError(e instanceof Error ? e.message : 'Generation failed.');
       }
+      setOutput((cur) => cur.filter((l) => !(l as GeneratedLine & { placeholder?: boolean }).placeholder));
     } finally {
       setIsGenerating(false);
       abortRef.current = null;
     }
   }
 
-  function updateOutputLine(index: number, text: string) {
-    setOutput((existing) => existing.map((line, lineIndex) => lineIndex === index ? { ...line, text, locked: true } : line));
+  function copyText(text: string, msg: string) {
+    if (!text.trim()) {
+      setToast('Nothing to copy.');
+      return;
+    }
+    if (navigator.clipboard?.writeText) navigator.clipboard.writeText(text);
+    setToast(msg);
   }
 
-  function toggleOutputLock(index: number) {
-    setOutput((existing) => existing.map((line, lineIndex) => lineIndex === index ? { ...line, locked: !line.locked } : line));
+  function exportTxt() {
+    const lines = output.length ? output.map((l) => l.text).join('\n') : prompt;
+    const meta = [
+      '# Melody-to-Lyrics Export',
+      `File: ${fileName || 'untitled'}`,
+      `Date: ${new Date().toISOString()}`,
+      `Tempo: ${midiInfo?.tempos.join(', ') || 'n/a'} BPM`,
+      `Meter: ${midiInfo ? `${midiInfo.timeSignature[0]}/${midiInfo.timeSignature[1]}` : 'n/a'}`,
+      `Prosody: ${phrases.map((p, i) => `L${i + 1} ${p.syllables} ${p.stressPattern}`).join('; ')}`,
+      '',
+    ].join('\n');
+    const blob = new Blob([`${meta}\n${lines}`], { type: 'text/plain' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `${fileName.replace(/\.[^.]+$/, '') || 'melody'}-lyrics.txt`;
+    a.click();
+    URL.revokeObjectURL(url);
+  }
+
+  function startOver() {
+    setFileName('');
+    setMidiInfo(null);
+    setNotes([]);
+    setPhrases([]);
+    setLocks([]);
+    setSectionLabels([]);
+    setOutput([]);
+    setSelectedPhraseId(null);
+    setPlayheadTime(0);
+    stopPreview();
   }
 
   return (
-    <main>
-      <section className="topbar">
-        <div>
-          <p className="eyebrow">Prosody-aware lyric studio</p>
-          <h1>Melody to Lyrics</h1>
-        </div>
-        <div className="status-pill">{phrases.length ? `${phrases.length} phrases from ${notes.length} notes` : 'No melody loaded'}</div>
-      </section>
-
-      {midiInfo && (
-        <section className="midi-info" aria-label="MIDI information">
-          <span>{midiInfo.trackName}</span>
-          <span>{midiInfo.tempos.join(', ')} BPM</span>
-          <span>{midiInfo.timeSignature[0]}/{midiInfo.timeSignature[1]}</span>
-          <span>{midiInfo.ppq} PPQ</span>
-        </section>
-      )}
-
-      <section
-        className="drop-zone"
-        onDragOver={(event) => event.preventDefault()}
-        onDrop={(event) => {
-          event.preventDefault();
-          const file = event.dataTransfer.files[0];
-          if (file) void handleFile(file);
-        }}
-      >
-        <FileMusic size={28} />
-        <div>
-          <strong>{fileName || 'Drop a MIDI melody'}</strong>
-          <span>or choose a .mid/.midi file under 10 MB</span>
-        </div>
-        <label className="button">
-          Browse
-          <input type="file" accept=".mid,.midi,audio/*" onChange={(event) => {
-            const file = event.target.files?.[0];
-            if (file) void handleFile(file);
-          }} />
-        </label>
-      </section>
-
-      {notes.length > 0 && (
-        <section className="preview-panel" aria-label="MIDI preview">
-          <button type="button" onClick={togglePreview}>
-            {isPlaying ? <Pause size={16} /> : <Play size={16} />}
-            {isPlaying ? 'Stop preview' : 'Play preview'}
-          </button>
-          <div className="preview-meter">
-            <div className="preview-track">
-              <div className="preview-fill" style={{ width: `${previewDuration ? ((playheadTime - previewStartTime) / previewDuration) * 100 : 0}%` }} />
-            </div>
-            <span className="mono">{formatTime(Math.max(0, playheadTime - previewStartTime))} / {formatTime(previewDuration || duration)}</span>
-          </div>
-        </section>
-      )}
-
-      {error && <div className="error"><XCircle size={16} /> {error}</div>}
-
-      <div className="workspace">
-        <section className="panel direction-panel">
-          <div className="panel-heading">
-            <h2>Prosody</h2>
-            <div className="button-row">
-              <button type="button" className="ghost small" onClick={clearLocks}>Clear locks</button>
-            </div>
-          </div>
-          {recurrenceHint && (
-            <div className="recurrence-hint">
-              <span>
-                Phrase{recurrenceHint.targets.length > 1 ? 's' : ''}{' '}
-                {recurrenceHint.targets.map((t) => t + 1).join(', ')} share this melody — apply <strong>{recurrenceHint.label}</strong> there too?
-              </span>
-              <button type="button" onClick={() => {
-                setSectionLabels((existing) => existing.map((label, index) =>
-                  recurrenceHint.targets.includes(index) ? recurrenceHint.label : label,
-                ));
-                setRecurrenceHint(null);
-              }}>Apply</button>
-              <button type="button" className="ghost" onClick={() => setRecurrenceHint(null)}>Dismiss</button>
-            </div>
-          )}
-          {phrases.length === 0 ? (
-            <p className="empty">Upload a MIDI file to see phrase boundaries, syllable counts, stress, and line-ending direction.</p>
-          ) : (
-            <div className="phrase-list">
-              {phrases.map((phrase, index) => {
-                const sectionLabel = sectionLabels[index] ?? '';
-                const isSectionStart = index === 0 || sectionLabel !== (sectionLabels[index - 1] ?? '');
-                const sectionEnd = isSectionStart ? sectionEndIndex(sectionLabels, index, phrases.length) : index + 1;
-
-                return (
-                  <div key={phrase.id} className="phrase-stack">
-                    {isSectionStart && (
-                      <SectionMarker
-                        label={sectionLabel}
-                        lineStart={index + 1}
-                        lineEnd={sectionEnd}
-                        canRemove={index > 0}
-                        onChange={(value) => handleSectionMarkerChange(index, value)}
-                        onRemove={() => handleRemoveSectionMarker(index)}
-                      />
-                    )}
-                    <PhraseRow
-                      phrase={phrase}
-                      index={index}
-                      origin={phraseOrigins[index] ?? 'auto'}
-                      lock={locks[index]}
-                      onLockInputChange={handleLockInputChange}
-                      onPolicyChange={handlePolicyChange}
-                      onClear={handleClearLock}
-                      onSplit={handleSplit}
-                      onMerge={handleMerge}
-                      onAddSectionMarker={handleAddSectionMarker}
-                      canMerge={index < phrases.length - 1}
-                      canAddSectionMarker={index > 0 && !isSectionStart}
-                      activeNoteIds={activeNoteIds}
-                      isPlaying={playingPhraseId === phrase.id}
-                      onPlayPhrase={playPhrasePreview}
-                    />
-                  </div>
-                );
-              })}
-            </div>
-          )}
-        </section>
-
-        <section className="panel">
-          <div className="panel-heading">
-            <h2>Direction</h2>
-          </div>
-          <div className="form-grid">
-            <label><InfoLabel label="Theme" info="The central idea or situation for the lyrics, such as leaving home, late-night longing, or winning after a loss." /><input value={context.theme} onChange={(event) => setContext({ ...context, theme: event.target.value })} /></label>
-            <label><InfoLabel label="Mood" info="The emotional color of the lyrics, such as tender, bitter, playful, haunted, euphoric, or restrained." /><input value={context.mood} onChange={(event) => setContext({ ...context, mood: event.target.value })} /></label>
-            <label><InfoLabel label="Genre" info="The songwriting style to aim for, such as pop, indie folk, R&B, musical theatre, synthwave, or country." /><input value={context.genre} onChange={(event) => setContext({ ...context, genre: event.target.value })} /></label>
-            <label><InfoLabel label="POV" info="The narrator perspective, such as first person I/we, second person you, or third person he/she/they." /><input value={context.pov} onChange={(event) => setContext({ ...context, pov: event.target.value })} /></label>
-            <label className="rhyme-control">
-              <InfoLabel label="Rhyme mode" info="Section rhyme families means each section gets one shared sound family, such as a chorus around -tion and a rap verse around -ee." />
-              <select
-                value={rhymeModeValue(context.rhymeScheme)}
-                onChange={(event) => {
-                  const nextValue = event.target.value;
-                  setContext({ ...context, rhymeScheme: nextValue === CUSTOM_RHYME ? 'ABAB' : nextValue });
-                }}
-              >
-                <option value="SECTION">Section rhyme families</option>
-                <option value={CUSTOM_RHYME}>Line pattern, e.g. ABAB</option>
-                <option value="FREE">No fixed rhyme</option>
-              </select>
-              {rhymeModeValue(context.rhymeScheme) === CUSTOM_RHYME && (
-                <input
-                  aria-label="Line rhyme pattern"
-                  placeholder="ABAB, AABB, AXAX"
-                  value={context.rhymeScheme}
-                  onChange={(event) => setContext({ ...context, rhymeScheme: event.target.value })}
-                />
-              )}
-              <span className="field-help">Default: one rhyme sound per section. Use a line pattern only when you want labels like A/B per line; X means no rhyme for that slot.</span>
-            </label>
-            <label><InfoLabel label="Must include" info="Words or phrases the generated lyrics should try to include somewhere, unless locked lines already cover them." /><input value={context.mustInclude} onChange={(event) => setContext({ ...context, mustInclude: event.target.value })} /></label>
-            <label><InfoLabel label="Avoid" info="Words, images, topics, or cliches the generator should stay away from." /><input value={context.avoid} onChange={(event) => setContext({ ...context, avoid: event.target.value })} /></label>
-          </div>
-          <label className="wide"><InfoLabel label="Other notes" info="Any extra creative instruction, reference, story detail, or wording preference that does not fit the structured fields." /><textarea value={context.otherNotes} onChange={(event) => setContext({ ...context, otherNotes: event.target.value })} /></label>
-          <label className="toggle"><input type="checkbox" checked={context.strictSyllables} onChange={(event) => setContext({ ...context, strictSyllables: event.target.checked })} /> <InfoLabel label="Strict syllable matching" info="When on, each lyric line must match the melody syllable count exactly. When off, the generator may allow plus or minus one syllable for natural phrasing." /></label>
-
-          <div className="panel-heading prompt-heading">
-            <h2>Prompt</h2>
-            <div className="button-row">
-              <button type="button" className="ghost small" onClick={() => setPromptVisible(!promptVisible)}>{promptVisible ? 'Hide' : 'Show'}</button>
-              <button type="button" className="ghost small" disabled={!prompt.trim()} onClick={copyPrompt}><Clipboard size={15} /> Copy prompt</button>
-            </div>
-          </div>
-          {strictMismatch && <div className="warning-box">Strict locked content mismatch exists. Fix the line or switch its policy before generating.</div>}
-          {copyStatus && <div className="copy-status" role="status">{copyStatus}</div>}
-          {promptVisible && <pre className="prompt-box">{prompt}</pre>}
-          <IterationLogPanel log={iterationLog} />
-
-          <div className="generate-row">
-            <select className="provider-select" aria-label="LLM provider" value={llmProvider} onChange={(event) => setLlmProvider(event.target.value as LlmProvider)}>
-              <option value="openai">OpenAI</option>
-              <option value="anthropic">Anthropic</option>
-              <option value="deepseek">DeepSeek</option>
-            </select>
-            <select
-              className="model-input"
-              aria-label={`${providerLabel(llmProvider)} model`}
-              value={modelForProvider(llmProvider)}
-              onChange={(event) => {
-                if (llmProvider === 'openai') {
-                  setOpenAIModel(event.target.value);
-                } else if (llmProvider === 'anthropic') {
-                  setAnthropicModel(event.target.value);
-                } else {
-                  setDeepSeekModel(event.target.value);
-                }
-              }}
-            >
-              {modelOptions[llmProvider].map((model) => (
-                <option key={model.value} value={model.value}>{model.label}</option>
-              ))}
-            </select>
-            {modelForProvider(llmProvider) === CUSTOM_MODEL && (
-              <input
-                className="custom-model-input"
-                aria-label="Custom model ID"
-                placeholder="Enter exact model ID"
-                value={customModel}
-                onChange={(event) => setCustomModel(event.target.value)}
-              />
-            )}
-            <input className="api-key" type="password" placeholder={`${providerLabel(llmProvider)} API key for in-tool generation`} value={apiKey} onChange={(event) => setApiKey(event.target.value)} />
-            <button type="button" disabled={!canGenerate} onClick={generateLyrics}><Wand2 size={16} /> {isGenerating ? 'Generating' : 'Generate'}</button>
-            {isGenerating && <button type="button" className="ghost" onClick={() => abortRef.current?.abort()}>Cancel</button>}
-          </div>
-        </section>
-      </div>
-
-      <section className="panel output-panel">
-        <div className="panel-heading">
-          <h2>Lyrics</h2>
-          <div className="button-row">
-            <button
-              type="button"
-              className="ghost small"
-              disabled={!canGenerate || output.length === 0}
-              onClick={generateLyrics}
-            >
-              Revise rest
-            </button>
-            <button type="button" className="ghost small" onClick={lockAll}><Lock size={15} /> Lock all</button>
-            <button type="button" className="ghost small" onClick={unlockAll}><Unlock size={15} /> Unlock all</button>
-            <button type="button" className="ghost small" onClick={copyLyrics}><Clipboard size={15} /> Copy</button>
-            <button type="button" className="ghost small" onClick={exportText}><Download size={15} /> Export .txt</button>
+    <div className="app">
+      <header className="app-header">
+        <div className="brand">
+          <div className="brand-mark"><I.music /></div>
+          <div className="brand-text">
+            <span className="brand-name">Melody to Lyrics</span>
+            <span className="brand-sub">Prosody-aware lyric studio</span>
           </div>
         </div>
-        {output.length === 0 ? (
-          <p className="empty">Generated lyrics will appear here. Editing any line locks it for the next pass.</p>
-        ) : (
-          <div className="output-list">
-            {output.map((line, index) => (
-              <div key={`${index}-${line.text}`} className={`output-line ${line.validation && !line.validation.passed ? 'invalid' : ''}`}>
-                <button type="button" className="icon-button" onClick={() => toggleOutputLock(index)} title={line.locked ? 'Unlock line' : 'Lock line'}>
-                  {line.locked ? <Lock size={16} /> : <Unlock size={16} />}
-                </button>
-                {line.validation && (
-                  <span
-                    className={`line-badge ${line.validation.passed ? 'pass' : 'warn'}`}
-                    title={line.validation.failures.map((f) => f.message).join('; ') || 'passed'}
-                  >
-                    {line.validation.passed ? '✓' : '!'}
-                  </span>
-                )}
-                <input value={line.text} onChange={(event) => updateOutputLine(index, event.target.value)} />
-                <span className="mono">{phrases[index]?.stressPattern}</span>
-                {line.validation && !line.validation.passed && (
-                  <small>{line.validation.failures.map((f) => f.message).join('; ')}</small>
-                )}
-              </div>
-            ))}
+
+        {step1Done && (
+          <div className="steps">
+            <div className={`step ${currentStep === 1 ? 'active' : 'done'}`}><span className="num">1</span>Upload</div>
+            <div className="step-divider" />
+            <div className={`step ${currentStep === 2 ? 'active' : currentStep > 2 ? 'done' : ''}`}><span className="num">2</span>Shape</div>
+            <div className="step-divider" />
+            <div className={`step ${currentStep === 3 ? 'active' : ''}`}><span className="num">3</span>Write</div>
           </div>
         )}
-      </section>
-    </main>
+
+        <div className="header-right">
+          {step1Done && (
+            <button type="button" className="btn ghost tiny" onClick={startOver}>
+              <I.reset /> Start over
+            </button>
+          )}
+        </div>
+      </header>
+
+      <main>
+        {!step1Done ? (
+          <EmptyState onFile={handleFile} onSample={loadSample} error={error} />
+        ) : (
+          <>
+            <SongBar
+              fileName={fileName}
+              midiInfo={midiInfo}
+              isPlaying={isPlaying}
+              onTogglePlay={togglePreview}
+              playheadTime={playheadTime}
+              totalDuration={totalDuration}
+            />
+
+            {error && <div className="error-banner"><I.x /> {error}</div>}
+
+            {isGenerating && (
+              <div className="writing-banner">
+                <span className="pulse" />
+                <span className="text">Writing lyrics to your melody…</span>
+                <span style={{ flex: 1 }} />
+                <span className="small">{phrases.length} lines</span>
+                <button type="button" className="btn ghost tiny" onClick={() => abortRef.current?.abort()}>Cancel</button>
+              </div>
+            )}
+
+            {output.length > 0 && !isGenerating && (
+              <div className="lyrics-actions">
+                <span className="lyrics-actions-label">
+                  <I.sparkle /> {output.length} lines generated · edit any line below to lock it
+                </span>
+                <span className="grow" />
+                <button type="button" className="btn ghost tiny" onClick={() => setOutput((o) => o.map((l) => ({ ...l, locked: true })))}><I.lock /> Lock all</button>
+                <button type="button" className="btn ghost tiny" onClick={() => setOutput((o) => o.map((l) => ({ ...l, locked: false })))}><I.unlock /> Unlock all</button>
+                <button type="button" className="btn ghost tiny" onClick={() => copyText(output.map((l) => l.text).join('\n'), 'Lyrics copied.')}><I.copy /> Copy</button>
+                <button type="button" className="btn ghost tiny" onClick={exportTxt}><I.download /> Export .txt</button>
+                <button type="button" className="btn ghost tiny" onClick={() => setOutput([])}><I.x /> Clear</button>
+              </div>
+            )}
+
+            <div className="workspace">
+              {/* LEFT: Step 2 — Shape */}
+              <div className="panel">
+                <div className="panel-head">
+                  <div>
+                    <span className="step-num">Step 2</span>
+                    <h2 style={{ display: 'inline' }}>Shape the lyric</h2>
+                  </div>
+                  <div className="row">
+                    <button
+                      type="button"
+                      className="btn ghost tiny"
+                      onClick={() => setLocks(phrases.map((_, i) => parseLockInput('', i)))}
+                    >Clear all locks</button>
+                  </div>
+                </div>
+
+                {/* Sticky toolbar */}
+                <div className="roll-toolbar">
+                  <div className="tb-group">
+                    <button type="button" className="btn icon-only" title="Play full melody" onClick={togglePreview}>
+                      {isPlaying ? <I.pause /> : <I.play />}
+                    </button>
+                    <button
+                      type="button"
+                      className="btn icon-only"
+                      title="Stop"
+                      onClick={() => { stopPreview(); setPlayheadTime(0); }}
+                      disabled={!isPlaying}
+                    ><I.stop /></button>
+                    {selectedPhrase && (
+                      <button
+                        type="button"
+                        className="btn icon-only"
+                        title={`Play line ${selectedPhraseIdx + 1}`}
+                        onClick={() => previewPhrase(selectedPhraseIdx)}
+                      ><I.playLine /></button>
+                    )}
+                  </div>
+                  <div className="tb-divider" />
+                  <div className="tb-group">
+                    <span className="tb-label">
+                      {selectedPhrase
+                        ? `Line ${selectedPhraseIdx + 1}${sectionLabels[selectedPhraseIdx] ? ` · ${sectionLabels[selectedPhraseIdx]}` : ''}`
+                        : 'Select a line'}
+                    </span>
+                    {selectedPhrase && (
+                      <>
+                        <button
+                          type="button"
+                          className="btn icon-only"
+                          title="Previous line"
+                          disabled={selectedPhraseIdx === 0}
+                          onClick={() => setSelectedPhraseId(phrases[selectedPhraseIdx - 1].id)}
+                        ><I.chevronLeft /></button>
+                        <button
+                          type="button"
+                          className="btn icon-only"
+                          title="Next line"
+                          disabled={selectedPhraseIdx >= phrases.length - 1}
+                          onClick={() => setSelectedPhraseId(phrases[selectedPhraseIdx + 1].id)}
+                        ><I.chevron /></button>
+                        <div className="tb-divider" />
+                        <div className="section-picker">
+                          <select
+                            className="tb-select"
+                            value={(sectionLabels[selectedPhraseIdx] || '').replace(/\s\d+$/, '')}
+                            onChange={(e) => {
+                              const v = e.target.value;
+                              if (v === '__remove') setSectionAt(selectedPhraseIdx, '');
+                              else setSectionAt(selectedPhraseIdx, v);
+                            }}
+                            title="Section label"
+                          >
+                            <option value="">— No section —</option>
+                            {SECTION_OPTIONS.map((o) => <option key={o} value={o}>{o}</option>)}
+                            {sectionLabels[selectedPhraseIdx] && <option value="__remove">Remove section</option>}
+                          </select>
+                        </div>
+                        <button
+                          type="button"
+                          className="btn ghost small"
+                          title="Merge this line with the next"
+                          disabled={selectedPhraseIdx >= phrases.length - 1}
+                          onClick={() => handleMerge(selectedPhraseIdx)}
+                        ><I.merge /> Merge</button>
+                        <button
+                          type="button"
+                          className="btn ghost small"
+                          title="Split this line in half"
+                          disabled={selectedPhrase.notes.length < 2}
+                          onClick={() => handleSplit(selectedPhraseIdx, Math.floor(selectedPhrase.notes.length / 2))}
+                        ><I.cut /> Split</button>
+                      </>
+                    )}
+                  </div>
+                  <span className="grow" />
+                  <span className="tb-meta">{phrases.length} lines · {notes.length} notes · {totalDuration.toFixed(1)}s</span>
+                </div>
+
+                <div className="panel-body">
+                  <PianoRoll
+                    phrases={phrases}
+                    notes={notes}
+                    selectedPhraseId={selectedPhraseId}
+                    onSelectPhrase={setSelectedPhraseId}
+                    onSplit={handleSplit}
+                    onSeek={seekAndPlay}
+                    playheadTime={playheadTime}
+                    isPlaying={isPlaying}
+                  />
+
+                  {selectedPhrase && (
+                    <ActiveLine
+                      key={selectedPhrase.id}
+                      phrase={selectedPhrase}
+                      idx={selectedPhraseIdx}
+                      total={phrases.length}
+                      sectionLabel={sectionLabels[selectedPhraseIdx]}
+                      isPhrasePlaying={isPlaying && playheadTime >= selectedPhrase.startTime && playheadTime <= selectedPhrase.endTime}
+                      onPreview={() => previewPhrase(selectedPhraseIdx)}
+                      lockRawInput={selectedLock?.rawInput ?? ''}
+                      output={output[selectedPhraseIdx]}
+                      isGenerating={isGenerating}
+                      onCommit={(text) => {
+                        if (output[selectedPhraseIdx]) {
+                          setOutput((o) => o.map((l, j) => (
+                            j === selectedPhraseIdx
+                              ? { ...l, text, locked: true, validation: null }
+                              : l
+                          )));
+                        } else {
+                          updateLockText(selectedPhraseIdx, text);
+                        }
+                      }}
+                      onClear={() => {
+                        if (output[selectedPhraseIdx]) {
+                          setOutput((o) => o.map((l, j) => (
+                            j === selectedPhraseIdx
+                              ? { ...l, text: '', locked: false }
+                              : l
+                          )));
+                        } else {
+                          clearLock(selectedPhraseIdx);
+                        }
+                      }}
+                      onToggleLock={() => setOutput((o) => o.map((l, j) => (
+                        j === selectedPhraseIdx ? { ...l, locked: !l.locked } : l
+                      )))}
+                    />
+                  )}
+
+                  {selectedPhrase && selectedLock && selectedLock.rawInput.trim()
+                    && selectedLock.totalSyllables !== selectedPhrase.syllables
+                    && !output[selectedPhraseIdx]?.text && (
+                    <div className="lock-warning">
+                      <I.x />
+                      <span>
+                        Your line has {selectedLock.totalSyllables} syllables, but the melody needs {selectedPhrase.syllables}.
+                      </span>
+                      <select
+                        value={selectedLock.policy}
+                        onChange={(e) => updateLockPolicy(selectedPhraseIdx, e.target.value as LockPolicy)}
+                        title="What should the AI do for this line?"
+                      >
+                        <option value="strict">Don&apos;t generate (I&apos;ll fix it)</option>
+                        <option value="trim">AI: trim my line to fit</option>
+                        <option value="pad">AI: pad my line to fit</option>
+                        <option value="auto">AI: decide</option>
+                      </select>
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* RIGHT: Step 3 — Styles */}
+              <div className="panel panel-sticky">
+                <div className="panel-head">
+                  <div>
+                    <span className="step-num">Step 3</span>
+                    <h2 style={{ display: 'inline' }}>Styles</h2>
+                  </div>
+                </div>
+
+                <div className="section-card">
+                  <p className="blurb" style={{ marginTop: 0 }}>
+                    Describe the song in your own words — genre, vocal, mood, theme. The whole block is sent to the model.
+                  </p>
+                  <textarea
+                    className="direction-box"
+                    value={context.direction ?? ''}
+                    onChange={(e) => setContext({ ...context, direction: e.target.value })}
+                    placeholder="indie folk, female vocal, warm and intimate, theme of leaving home…"
+                    spellCheck={false}
+                  />
+                  <div className="direction-actions">
+                    <button type="button" className="btn ghost tiny" onClick={() => setContext({ ...context, direction: '' })}>Clear</button>
+                    <button type="button" className="btn ghost tiny" onClick={() => setContext({ ...context, direction: DIRECTION_TEMPLATE })}>Reset to template</button>
+                    <span style={{ flex: 1 }} />
+                    <span className="lbl" style={{ fontSize: 10, color: 'var(--ink-faint)' }}>{(context.direction ?? '').length} chars</span>
+                  </div>
+
+                  <div className="tag-pool">
+                    {STYLE_TAGS.map((t) => {
+                      const active = (context.direction ?? '').toLowerCase().includes(t.toLowerCase());
+                      return (
+                        <button
+                          key={t}
+                          type="button"
+                          className={`tag-chip ${active ? 'active' : ''}`}
+                          onClick={() => {
+                            if (active) return;
+                            const cur = context.direction ?? '';
+                            const sep = !cur || cur.endsWith('\n') || cur.endsWith(' ') || cur.endsWith(',') ? '' : ' ';
+                            const punct = cur && !cur.endsWith('\n') && !cur.endsWith(',') ? ',' : '';
+                            const trailingSpace = cur && !cur.endsWith('\n') ? ' ' : '';
+                            setContext({ ...context, direction: cur + punct + sep + trailingSpace + t });
+                          }}
+                          title={active ? 'Already in your direction' : 'Click to add'}
+                        >
+                          {active && <span className="check">✓</span>}{t}
+                        </button>
+                      );
+                    })}
+                  </div>
+
+                  <div className="constraint-row">
+                    <div className="field" style={{ flex: 1.4 }}>
+                      <label>Rhyme strategy</label>
+                      <select
+                        value={
+                          context.rhymeScheme === 'SECTION' || context.rhymeScheme === 'FREE'
+                            ? context.rhymeScheme
+                            : 'CUSTOM'
+                        }
+                        onChange={(e) => setContext({
+                          ...context,
+                          rhymeScheme: e.target.value === 'CUSTOM' ? 'ABAB' : e.target.value,
+                        })}
+                      >
+                        <option value="SECTION">Section families — each section gets its own rhyme lane</option>
+                        <option value="CUSTOM">Fixed pattern — repeat per line (ABAB, AABB…)</option>
+                        <option value="FREE">No fixed rhyme — slant &amp; internal only</option>
+                      </select>
+                      <small className="field-help">
+                        {context.rhymeScheme === 'SECTION' && 'Verses share one rhyme family, choruses share another. Most natural for pop/folk.'}
+                        {context.rhymeScheme === 'FREE' && 'Model leans on assonance, consonance, internal echoes — no forced end rhyme.'}
+                        {!['SECTION', 'FREE'].includes(context.rhymeScheme) && 'Strict end-rhyme by line position. Best for hymn-like or tightly-structured lyrics.'}
+                      </small>
+                    </div>
+                    {!['SECTION', 'FREE'].includes(context.rhymeScheme) && (
+                      <div className="field" style={{ flex: 1 }}>
+                        <label>Pattern</label>
+                        <input
+                          value={context.rhymeScheme}
+                          onChange={(e) => setContext({ ...context, rhymeScheme: e.target.value })}
+                          placeholder="ABAB"
+                        />
+                      </div>
+                    )}
+                    <div className="toggle-row" style={{ flex: 1 }}>
+                      <div className="lbl-stack">
+                        <span>Strict syllables</span>
+                        <small>Off = ±1 allowed</small>
+                      </div>
+                      <button
+                        type="button"
+                        className={`toggle ${context.strictSyllables ? 'on' : ''}`}
+                        onClick={() => setContext({ ...context, strictSyllables: !context.strictSyllables })}
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                <div className="generate-bar">
+                  <select
+                    value={llmProvider}
+                    onChange={(e) => {
+                      const p = e.target.value as LlmProvider;
+                      setLlmProvider(p);
+                      setModel(defaultModelFor(p));
+                    }}
+                    style={{ background: 'var(--bg)', color: 'var(--ink)', border: '1px solid var(--border)', padding: '7px 10px', borderRadius: 4, fontFamily: 'var(--mono)', fontSize: 11 }}
+                  >
+                    <option value="anthropic">Anthropic</option>
+                    <option value="openai">OpenAI</option>
+                    <option value="deepseek">DeepSeek</option>
+                  </select>
+                  <input
+                    className="api-key"
+                    type="text"
+                    placeholder="Model ID"
+                    value={model}
+                    onChange={(e) => setModel(e.target.value)}
+                    style={{ width: 160 }}
+                  />
+                  <input
+                    className="api-key"
+                    type="password"
+                    placeholder="API key"
+                    value={apiKey}
+                    onChange={(e) => setApiKey(e.target.value)}
+                  />
+                  <span className="grow" />
+                  {strictMismatch && <span className="warning-pill"><I.x /> Strict mismatch</span>}
+                  <button
+                    type="button"
+                    className="btn primary"
+                    disabled={!phrases.length || strictMismatch || isGenerating}
+                    onClick={generate}
+                  >
+                    <I.wand /> {isGenerating ? 'Writing…' : (output.length ? 'Regenerate' : 'Generate lyrics')}
+                  </button>
+                  {isGenerating && (
+                    <button type="button" className="btn ghost small" onClick={() => abortRef.current?.abort()}>Cancel</button>
+                  )}
+                </div>
+
+                <details className="prompt-drawer" open={tweaks.showPrompt}>
+                  <summary>
+                    <span>View raw prompt</span>
+                    <button
+                      type="button"
+                      className="btn ghost tiny"
+                      onClick={(e) => { e.preventDefault(); copyText(prompt, 'Prompt copied.'); }}
+                    ><I.copy /> Copy</button>
+                  </summary>
+                  <pre>{prompt}</pre>
+                </details>
+              </div>
+            </div>
+
+            {/* Full lyrics card */}
+            {output.length > 0 && output.some((o) => o?.text) && (
+              <div className="panel full-lyrics">
+                <div className="panel-head">
+                  <div>
+                    <span className="step-num">Result</span>
+                    <h2 style={{ display: 'inline' }}>Full lyrics</h2>
+                  </div>
+                  <div className="row">
+                    <button
+                      type="button"
+                      className="btn ghost small"
+                      title="Copy all lyrics to clipboard"
+                      onClick={() => {
+                        const lines = output.map((o, i) => {
+                          const sec = sectionLabels[i];
+                          const prefix = sec ? `\n[${sec}]\n` : '';
+                          return prefix + (o?.text ?? '');
+                        }).join('\n').trim();
+                        copyText(lines, 'Lyrics copied.');
+                      }}
+                    ><I.copy /> Copy all</button>
+                    <button
+                      type="button"
+                      className="btn ghost small"
+                      title="Lock every line"
+                      onClick={() => setOutput((o) => o.map((l) => (l ? { ...l, locked: true } : l)))}
+                    ><I.lock /> Lock all</button>
+                  </div>
+                </div>
+                <div className="full-lyrics-body">
+                  {phrases.map((phrase, i) => {
+                    const o = output[i];
+                    const text = o?.text ?? '';
+                    const userSyl = text ? countSyllables(text) : 0;
+                    const target = phrase.syllables;
+                    const sylDelta = userSyl - target;
+                    const sylStatus = !text ? 'empty' : sylDelta === 0 ? 'match' : Math.abs(sylDelta) === 1 ? 'close' : 'off';
+                    const isActive = phrase.id === selectedPhraseId;
+                    const sec = sectionLabels[i];
+                    return (
+                      <Fragment key={phrase.id}>
+                        {sec && <div className="fl-section">{sec}</div>}
+                        <div
+                          className={`fl-row ${isActive ? 'active' : ''} ${o?.locked ? 'locked' : ''}`}
+                          onClick={() => setSelectedPhraseId(phrase.id)}
+                        >
+                          <div className="fl-num">{i + 1}</div>
+                          <input
+                            className="fl-text"
+                            type="text"
+                            value={text}
+                            placeholder="(not generated)"
+                            onClick={(e) => e.stopPropagation()}
+                            onChange={(e) => setOutput((cur) => cur.map((l, j) => (
+                              j === i
+                                ? { ...(l ?? { text: '', locked: false, validation: null }), text: e.target.value, locked: true }
+                                : l
+                            )))}
+                            spellCheck={false}
+                          />
+                          <span className={`fl-syl ${sylStatus}`} title={`${userSyl} of ${target} syllables`}>
+                            {userSyl}/{target}
+                          </span>
+                          <button
+                            type="button"
+                            className={`fl-lock ${o?.locked ? 'on' : ''}`}
+                            title={o?.locked ? "Locked — won't change on regenerate" : 'Unlocked — will regenerate'}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setOutput((cur) => cur.map((l, j) => (
+                                j === i
+                                  ? { ...(l ?? { text: '', locked: false, validation: null }), locked: !l?.locked }
+                                  : l
+                              )));
+                            }}
+                          >{o?.locked ? <I.lock /> : <I.unlock />}</button>
+                        </div>
+                      </Fragment>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+          </>
+        )}
+      </main>
+
+      {toast && <div className="toast">{toast}</div>}
+
+      <TweaksPanel title="Tweaks">
+        <TweakSection title="Visual">
+          <TweakSelect
+            label="Theme"
+            value={tweaks.theme}
+            onChange={(v) => setTweak('theme', v as typeof tweaks.theme)}
+            options={[
+              { value: 'editorial', label: 'Editorial (rose pink)' },
+              { value: 'studio', label: 'Studio (cool blue)' },
+              { value: 'paper', label: 'Paper (light)' },
+            ]}
+          />
+          <TweakSelect
+            label="Display font"
+            value={tweaks.fontDisplay}
+            onChange={(v) => setTweak('fontDisplay', v as typeof tweaks.fontDisplay)}
+            options={[
+              { value: 'Fraunces', label: 'Fraunces' },
+              { value: 'Cormorant Garamond', label: 'Cormorant' },
+              { value: 'Playfair Display', label: 'Playfair' },
+              { value: 'EB Garamond', label: 'EB Garamond' },
+            ]}
+          />
+          <TweakRadio
+            label="Density"
+            value={tweaks.density}
+            onChange={(v) => setTweak('density', v as typeof tweaks.density)}
+            options={[
+              { value: 'comfortable', label: 'Comfy' },
+              { value: 'compact', label: 'Compact' },
+            ]}
+          />
+        </TweakSection>
+        <TweakSection title="Behavior">
+          <TweakToggle label="Show prompt by default" value={tweaks.showPrompt} onChange={(v) => setTweak('showPrompt', v)} />
+        </TweakSection>
+      </TweaksPanel>
+    </div>
+  );
+}
+
+// ============================================================
+// Empty state
+// ============================================================
+function EmptyState({ onFile, onSample, error }: {
+  onFile: (file: File | null | undefined) => void;
+  onSample: () => void;
+  error: string;
+}) {
+  const [dragging, setDragging] = useState(false);
+  return (
+    <div className="empty-hero">
+      <div>
+        <div className="eyebrow" style={{ color: 'var(--accent)' }}>Three steps · Upload, Shape, Write</div>
+        <h1>Lyrics that <em>scan</em> to your melody.</h1>
+        <p>Drop a MIDI file. We&apos;ll find the phrases, count the syllables, and mark the strong beats — then you write lyrics that fit, with locked words preserved verbatim.</p>
+
+        <label
+          className={`drop-zone ${dragging ? 'dragging' : ''}`}
+          onDragOver={(e) => { e.preventDefault(); setDragging(true); }}
+          onDragLeave={() => setDragging(false)}
+          onDrop={(e) => { e.preventDefault(); setDragging(false); onFile(e.dataTransfer.files[0]); }}
+        >
+          <div className="drop-icon"><I.upload /></div>
+          <strong>Drop a MIDI melody</strong>
+          <span>or click to browse · .mid / .midi · up to 10 MB</span>
+          <input type="file" accept=".mid,.midi" onChange={(e) => onFile(e.target.files?.[0])} />
+        </label>
+
+        <div className="empty-actions">
+          <button type="button" className="text-link" onClick={onSample}>
+            <I.sparkle /> Try a sample melody
+          </button>
+        </div>
+
+        {error && (
+          <div className="error-banner" style={{ maxWidth: 540, margin: '20px auto 0' }}>
+            <I.x /> {error}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ============================================================
+// Song bar (after upload)
+// ============================================================
+function SongBar({ fileName, midiInfo, isPlaying, onTogglePlay, playheadTime, totalDuration }: {
+  fileName: string;
+  midiInfo: MidiFileInfo | null;
+  isPlaying: boolean;
+  onTogglePlay: () => void;
+  playheadTime: number;
+  totalDuration: number;
+}) {
+  return (
+    <div className="song-bar">
+      <span className="file-name">{fileName}</span>
+      {midiInfo && (
+        <div className="midi-meta">
+          <span>{midiInfo.tempos.join(', ')} BPM</span>
+          <span>{midiInfo.timeSignature[0]}/{midiInfo.timeSignature[1]}</span>
+          <span>{midiInfo.trackName}</span>
+        </div>
+      )}
+      <span className="spacer" />
+      <div className="play-area">
+        <button type="button" className="btn small" onClick={onTogglePlay}>{isPlaying ? <I.pause /> : <I.play />}</button>
+        <div className="scrub">
+          <div className="scrub-fill" style={{ width: `${totalDuration ? (playheadTime / totalDuration) * 100 : 0}%` }} />
+        </div>
+        <span className="timecode">{fmtTime(playheadTime)} / {fmtTime(totalDuration)}</span>
+      </div>
+    </div>
+  );
+}
+
+// ============================================================
+// Active line — focus mode below the piano roll
+// ============================================================
+function ActiveLine({
+  phrase, idx, total, sectionLabel, isPhrasePlaying, onPreview,
+  lockRawInput, output, isGenerating, onCommit, onClear, onToggleLock,
+}: {
+  phrase: Phrase;
+  idx: number;
+  total: number;
+  sectionLabel: string | undefined;
+  isPhrasePlaying: boolean;
+  onPreview: () => void;
+  lockRawInput: string;
+  output: GeneratedLine | undefined;
+  isGenerating: boolean;
+  onCommit: (text: string) => void;
+  onClear: () => void;
+  onToggleLock: () => void;
+}) {
+  const currentLine = output?.text ?? lockRawInput;
+  const userSyllables = currentLine ? countSyllables(currentLine) : 0;
+  const target = phrase.syllables;
+  const sylDelta = userSyllables - target;
+  const sylStatus: 'empty' | 'match' | 'close' | 'off' = !currentLine
+    ? 'empty'
+    : sylDelta === 0
+      ? 'match'
+      : Math.abs(sylDelta) === 1
+        ? 'close'
+        : 'off';
+  const isGeneratingHere = isGenerating && !output?.text;
+  const isAILine = !!output?.text;
+
+  const words = currentLine ? splitLineSyllables(currentLine) : [];
+  const flat: Array<{ syl: string; wordStart: boolean; wordEnd: boolean; wordIdx: number }> = [];
+  words.forEach((w, wi) => {
+    w.syllables.forEach((s, si) => {
+      flat.push({
+        syl: s,
+        wordStart: si === 0,
+        wordEnd: si === w.syllables.length - 1,
+        wordIdx: wi,
+      });
+    });
+  });
+
+  return (
+    <div className="active-line">
+      <div className="active-line-head">
+        <button
+          type="button"
+          className="phrase-play"
+          title="Play this line"
+          onClick={onPreview}
+        >
+          {isPhrasePlaying ? <I.pause /> : <I.play />}
+        </button>
+        <div className="al-title">
+          <strong>Line {idx + 1}</strong>
+          <span className="al-of">of {total}</span>
+          {sectionLabel && <span className="al-section-tag">{sectionLabel}</span>}
+        </div>
+        <span className="grow" />
+        <span className={`syllable-counter ${sylStatus}`}>
+          {sylStatus === 'match' && <I.check />}
+          {sylStatus === 'off' && <I.x />}
+          <strong>{userSyllables}</strong>
+          <span className="sep">/</span>
+          <strong>{target}</strong>
+          <span className="lbl">syllables</span>
+        </span>
+      </div>
+
+      <div className="al-help">
+        The melody wants <strong>{target} syllables</strong>. Type any line — words auto-flow into the slots below, one syllable per beat.
+      </div>
+
+      <div className={`line-editor ${sylStatus}`}>
+        {isGeneratingHere ? (
+          <div className="line-editor-skeleton">
+            <div className="skeleton-bar" />
+            <span className="skeleton-label">writing line {idx + 1}…</span>
+          </div>
+        ) : (
+          <>
+            {isAILine && output && (
+              <button
+                type="button"
+                className={`lock-toggle inline ${output.locked ? 'on' : ''}`}
+                title={output.locked ? "Locked — won't change on regenerate" : 'Unlocked — will regenerate'}
+                onClick={onToggleLock}
+              >
+                {output.locked ? <I.lock /> : <I.unlock />}
+              </button>
+            )}
+            <input
+              className="line-editor-input"
+              type="text"
+              value={currentLine}
+              placeholder={'Type your own line, or leave blank and click "Generate lyrics" →'}
+              onChange={(e) => onCommit(e.target.value)}
+              spellCheck={false}
+            />
+            {currentLine && (
+              <button
+                type="button"
+                className="line-editor-clear"
+                title="Clear this line"
+                onClick={onClear}
+              >×</button>
+            )}
+          </>
+        )}
+      </div>
+
+      <div className="slot-row">
+        {phrase.notes.map((n, k) => {
+          const piece = flat[k];
+          return (
+            <div
+              key={k}
+              className={`slot ${n.stress === 'S' ? 'strong' : 'weak'} ${piece ? 'filled' : 'empty'} ${piece?.wordStart ? 'word-start' : ''} ${piece?.wordEnd ? 'word-end' : ''}`}
+              title={`Beat ${k + 1} · ${n.stress === 'S' ? 'strong (emphasized)' : 'weak (unstressed)'}`}
+            >
+              <span className="slot-stress">{n.stress === 'S' ? 'S' : 'w'}</span>
+              <span className="slot-text">{piece ? piece.syl : '·'}</span>
+            </div>
+          );
+        })}
+        {flat.slice(target).map((piece, k) => (
+          <div key={`over-${k}`} className="slot overflow" title="Extra syllable — beyond the melody">
+            <span className="slot-stress">!</span>
+            <span className="slot-text">{piece.syl}</span>
+          </div>
+        ))}
+      </div>
+    </div>
   );
 }

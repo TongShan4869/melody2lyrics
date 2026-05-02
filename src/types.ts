@@ -63,6 +63,7 @@ export type LyricsContext = {
   avoid: string;
   rhymeScheme: string;
   strictSyllables: boolean;
+  direction?: string;
 };
 
 export type GeneratedLine = {

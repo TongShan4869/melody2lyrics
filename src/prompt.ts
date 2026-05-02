@@ -40,18 +40,23 @@ export function buildPrompt(phrases: Phrase[], locks: PhraseLockState[], context
 
   const fillerList = DEFAULT_FILLER_END_WORDS.join(', ');
 
-  return `You are writing singable English lyrics to fit an existing melody.
-
-CREATIVE DIRECTION
-Theme: ${context.theme || 'open'}
+  const direction = context.direction && context.direction.trim()
+    ? context.direction.trim()
+    : `Theme: ${context.theme || 'open'}
 Mood: ${context.mood || 'open'}
 Genre: ${context.genre || 'open'}
 Point of view: ${context.pov || 'open'}
+Must include: ${context.mustInclude || 'none'}
+Avoid: ${context.avoid || 'none'}`;
+
+  return `You are writing singable English lyrics to fit an existing melody.
+
+CREATIVE DIRECTION
+${direction}
+
 RHYME PLAN: ${rhymePlan}
 - Use rhyme as a section identity, not as repeated filler endings.
 - Prefer slant rhyme, internal rhyme, assonance, consonance, and rhythmic echoes over exact repeated end words.
-Must include: ${context.mustInclude || 'none'}
-Avoid: ${context.avoid || 'none'}
 
 MELODY PROSODY WITH LOCKED CONTENT
 ${lines.join('\n\n')}
