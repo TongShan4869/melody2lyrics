@@ -985,7 +985,7 @@ function EmptyState({ onFile, onSample, error }: {
     <div className="empty-hero">
       <div>
         <div className="eyebrow" style={{ color: 'var(--accent)' }}>Three steps · Upload, Shape, Write</div>
-        <h1>Lyrics that <em>scan</em> to your melody.</h1>
+        <h1>Lyrics that <em>belong</em> to your melody.</h1>
         <p>Drop a MIDI file. We&apos;ll find the phrases, count the syllables, and mark the strong beats — then you write lyrics that fit, with locked words preserved verbatim.</p>
 
         <label
