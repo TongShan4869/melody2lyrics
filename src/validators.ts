@@ -110,6 +110,7 @@ export function lengthAlignmentValidator(
 ): ValidationFailure | null {
   const lastNote = phrase.notes[phrase.notes.length - 1];
   if (!lastNote || lastNote.length !== 'L') return null;
+  if (isFinalNoteHeld(phrase)) return null; // heldVowelValidator owns the held case
   const word = lastWord(line);
   const vowel = finalVowel(word);
   if (vowel === null) return null;
