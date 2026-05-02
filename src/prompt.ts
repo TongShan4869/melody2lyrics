@@ -221,7 +221,7 @@ export function buildRevisionPrompt(input: RevisionPromptInput): string {
     const priorBlock = prior.length
       ? `\n  Previous attempts (do not repeat):\n${prior.map((p) => `    - "${p}"`).join('\n')}\n  Try a different direction.`
       : '';
-    return `Line ${index + 1} (${input.phrases[index]?.syllables ?? '?'} syllables, stress = ${input.phrases[index]?.stressPattern ?? ''}):\n${reasons}${priorBlock}`;
+    return `Line ${index + 1} (${input.phrases[index]?.syllables ?? '?'} syllables, prosody = ${input.phrases[index] ? compoundProsody(input.phrases[index]) : ''}):\n${reasons}${priorBlock}`;
   }).join('\n\n');
 
   return `${initialPrompt}

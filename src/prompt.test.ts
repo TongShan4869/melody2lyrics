@@ -42,6 +42,10 @@ describe('prompt builder', () => {
     expect(rhythmProfile(phrase)).toBe('short-short-held');
   });
 
+  it('emits compound prosody tokens per note', () => {
+    expect(compoundProsody(phrase)).toBe('<strong,short>-<weak,short>-<weak,long>');
+  });
+
   it('treats X rhyme labels as free lines', () => {
     expect(rhymeLabels('AX', 4)).toEqual(['A', '', 'A', '']);
   });
@@ -77,6 +81,15 @@ describe('prompt builder', () => {
     expect(prompt).toContain('Strength alignment');
     expect(prompt).toContain('Length alignment');
     expect(prompt).toContain('<strong/weak,long/short>');
+
+    const block = prompt.split('PROSODY PRINCIPLES (singability)\n')[1].split('\n\nRHYME PLAN:')[0];
+    expect(`PROSODY PRINCIPLES (singability)\n${block}`).toMatchInlineSnapshot(`
+      "PROSODY PRINCIPLES (singability)
+      1. Strength alignment: place stressed syllables on <strong> notes; unstressed on <weak>.
+      2. Length alignment: place long syllables (open or held vowels — IPA [ː], or diphthongs like /eɪ/, /aɪ/, /aʊ/, /oʊ/, /ɔɪ/) on <long> notes; short, closed-vowel syllables on <short> notes.
+      3. Singers can comfortably sustain long vowels and diphthongs; closed-vowel syllables on long notes feel strained.
+      4. The compound template <strong/weak,long/short> per slot communicates both axes — honor it."
+    `);
   });
 
   it('puts other notes at the end of the prompt', () => {
