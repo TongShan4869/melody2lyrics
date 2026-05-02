@@ -26,6 +26,7 @@ export type ParsedMidi = {
 export type AnalyzedNote = Note & {
   stressScore: number;
   stress: 'S' | 'w';
+  length: 'L' | 'S';
 };
 
 export type Phrase = {

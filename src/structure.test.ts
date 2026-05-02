@@ -11,6 +11,7 @@ const makeNote = (midi: number, duration: number): AnalyzedNote => ({
   velocity: 0.8,
   stressScore: 0.5,
   stress: 'w',
+  length: 'S',
 });
 
 const makePhrase = (pitches: number[], durations: number[]): Phrase => ({

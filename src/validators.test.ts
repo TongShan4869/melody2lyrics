@@ -120,7 +120,7 @@ describe('fillerEndingValidator', () => {
 
 const note = (duration: number): import('./types').AnalyzedNote => ({
   id: 'n', midi: 60, pitch: 'C4', time: 0, duration, velocity: 0.8,
-  stressScore: 0.5, stress: 'w',
+  stressScore: 0.5, stress: 'w', length: 'S',
 });
 
 const phraseWith = (durations: number[]): Phrase => ({

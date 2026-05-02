@@ -116,6 +116,30 @@ describe('prosody analysis', () => {
     expect(merged).toHaveLength(1);
     expect(merged[0].notes.map((item) => item.id)).toEqual(['1', '2', '3']);
   });
+
+  it('marks notes longer than the phrase mean as L', () => {
+    const phrases = analyzeNotes([
+      note(1, 0, 0.2),
+      note(2, 0.2, 0.2),
+      note(3, 0.4, 1.0),
+      note(4, 1.4, 0.2),
+    ]);
+    expect(phrases[0].notes.map((n) => n.length).join('')).toBe('SSLS');
+  });
+
+  it('marks all-equal-duration notes as S (none exceeds the mean)', () => {
+    const phrases = analyzeNotes([
+      note(1, 0, 0.5),
+      note(2, 0.5, 0.5),
+      note(3, 1.0, 0.5),
+    ]);
+    expect(phrases[0].notes.every((n) => n.length === 'S')).toBe(true);
+  });
+
+  it('marks a single-note phrase as S', () => {
+    const phrases = analyzeNotes([note(1, 0, 0.5)]);
+    expect(phrases[0].notes[0].length).toBe('S');
+  });
 });
 
 describe('analyzeNotes downbeat snap', () => {

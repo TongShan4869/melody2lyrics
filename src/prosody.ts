@@ -80,12 +80,15 @@ function analyzePhraseNotes(notes: Note[], beat: number): AnalyzedNote[] {
   if (notes.length === 0) return [];
 
   const phraseStart = notes[0];
+  const meanDuration = notes.reduce((sum, n) => sum + n.duration, 0) / notes.length;
+
   const analyzed = notes.map((note): AnalyzedNote => {
     const stressScore = metricStress(note, phraseStart, beat);
     return {
       ...note,
       stressScore,
       stress: stressScore >= STRONG_STRESS_THRESHOLD ? 'S' : 'w',
+      length: note.duration > meanDuration ? 'L' : 'S',
     };
   });
 
