@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { syllableValidator, lockedWordsValidator, endCollisionValidator, fillerEndingValidator, heldVowelValidator, avoidWordsValidator, validateLines } from './validators';
+import { syllableValidator, lockedWordsValidator, endCollisionValidator, fillerEndingValidator, heldVowelValidator, lengthAlignmentValidator, avoidWordsValidator, validateLines } from './validators';
 import type { Phrase, LyricsContext, PhraseLockState } from './types';
 import { parseLockInput } from './locks';
 
@@ -156,6 +156,58 @@ describe('heldVowelValidator', () => {
   it('passes when final word is unknown (skip)', () => {
     const phrase = phraseWith([0.25, 0.25, 0.25, 1.5]);
     expect(heldVowelValidator('whispering xyzzy', phrase)).toBeNull();
+  });
+});
+
+describe('lengthAlignmentValidator', () => {
+  const longTail = (durations: number[]): Phrase => ({
+    id: 'p',
+    notes: durations.map((d, i) => ({
+      id: `n${i}`, midi: 60, pitch: 'C4', time: i, duration: d, velocity: 0.8,
+      stressScore: 0.5, stress: 'w', length: i === durations.length - 1 ? 'L' : 'S',
+    })),
+    syllables: durations.length,
+    stressPattern: '',
+    endingDirection: 'level',
+    startTime: 0,
+    endTime: 0,
+  });
+
+  const shortTail = (durations: number[]): Phrase => ({
+    id: 'p',
+    notes: durations.map((d, i) => ({
+      id: `n${i}`, midi: 60, pitch: 'C4', time: i, duration: d, velocity: 0.8,
+      stressScore: 0.5, stress: 'w', length: 'S',
+    })),
+    syllables: durations.length,
+    stressPattern: '',
+    endingDirection: 'level',
+    startTime: 0,
+    endTime: 0,
+  });
+
+  it('fails when long final note carries a closed-vowel word', () => {
+    const result = lengthAlignmentValidator('something I find sad', longTail([0.2, 0.2, 0.2, 0.8]));
+    expect(result).toEqual({
+      type: 'length-alignment',
+      message: expect.stringContaining('sad'),
+    });
+  });
+
+  it('passes when long final note carries an open-vowel word', () => {
+    expect(lengthAlignmentValidator('walking far away', longTail([0.2, 0.2, 0.2, 0.8]))).toBeNull();
+  });
+
+  it('passes when long final note carries a diphthong word', () => {
+    expect(lengthAlignmentValidator('looking at the sky', longTail([0.2, 0.2, 0.2, 0.8]))).toBeNull();
+  });
+
+  it('passes when final note is short (no trigger)', () => {
+    expect(lengthAlignmentValidator('something I find sad', shortTail([0.2, 0.2, 0.2, 0.2]))).toBeNull();
+  });
+
+  it('passes when final word is unknown (skip)', () => {
+    expect(lengthAlignmentValidator('whispering xyzzy', longTail([0.2, 0.2, 0.8]))).toBeNull();
   });
 });
 

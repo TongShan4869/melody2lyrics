@@ -79,6 +79,7 @@ export type ValidationFailureType =
   | 'end-collision'
   | 'filler'
   | 'held-vowel'
+  | 'length-alignment'
   | 'avoid';
 
 export type ValidationFailure = {

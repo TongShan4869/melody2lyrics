@@ -58,7 +58,7 @@ const FINAL_VOWELS: Record<string, ArpabetVowel> = {
   her: 'ER', word: 'ER', heard: 'ER',
   good: 'UH', could: 'UH', should: 'UH',
   red: 'EH', said: 'EH',
-  bad: 'AE', back: 'AE',
+  bad: 'AE', back: 'AE', sad: 'AE',
 };
 
 export function finalVowel(word: string): ArpabetVowel | null {
