@@ -59,13 +59,6 @@ const initialContext: LyricsContext = {
   rhymeScheme: 'SECTION', strictSyllables: false,
 };
 
-function fmtTime(seconds: number): string {
-  const safe = Math.max(0, seconds);
-  const m = Math.floor(safe / 60);
-  const s = Math.floor(safe % 60).toString().padStart(2, '0');
-  return `${m}:${s}`;
-}
-
 function defaultModelFor(provider: LlmProvider): string {
   if (provider === 'anthropic') return 'claude-sonnet-4-6';
   if (provider === 'openai') return 'gpt-5.5';
@@ -226,9 +219,10 @@ export default function App() {
     const myGen = ++playGenRef.current;
     const ac = await ensureCtx();
     if (myGen !== playGenRef.current) return;
-    setPlayheadTime(0);
-    playbackRef.current = schedulePreview(notes, ac, 0);
-    playStartRef.current = performance.now();
+    const startFrom = playheadTime > 0 && playheadTime < totalDuration ? playheadTime : 0;
+    setPlayheadTime(startFrom);
+    playbackRef.current = schedulePreview(notes, ac, startFrom);
+    playStartRef.current = performance.now() - startFrom * 1000;
     setIsPlaying(true);
     const tick = () => {
       if (myGen !== playGenRef.current) return;
@@ -310,6 +304,11 @@ export default function App() {
     setPhrases(next);
     setLocks(next.map((_, i) => locks[i] ?? parseLockInput('', i)));
     setSectionLabels(nextLabels);
+    setOutput((cur) => cur.length === 0 ? cur : [
+      ...cur.slice(0, pIdx + 1),
+      { text: '', locked: false, validation: null },
+      ...cur.slice(pIdx + 1),
+    ]);
   }
   function handleMerge(pIdx: number) {
     const next = mergePhrases(phrases, pIdx);
@@ -317,6 +316,7 @@ export default function App() {
     setPhrases(next);
     setLocks(next.map((_, i) => locks[i] ?? parseLockInput('', i)));
     setSectionLabels(sectionLabels.filter((_, i) => i !== pIdx + 1));
+    setOutput((cur) => cur.length === 0 ? cur : cur.filter((_, i) => i !== pIdx + 1));
   }
   function setSectionAt(idx: number, value: string) {
     setSectionLabels((cur) => cur.map((s, i) => (i === idx ? value : s)));
@@ -474,14 +474,7 @@ export default function App() {
           <EmptyState onFile={handleFile} onSample={loadSample} error={error} />
         ) : (
           <>
-            <SongBar
-              fileName={fileName}
-              midiInfo={midiInfo}
-              isPlaying={isPlaying}
-              onTogglePlay={togglePreview}
-              playheadTime={playheadTime}
-              totalDuration={totalDuration}
-            />
+            <SongBar fileName={fileName} midiInfo={midiInfo} />
 
             {error && <div className="error-banner"><I.x /> {error}</div>}
 
@@ -562,14 +555,22 @@ export default function App() {
                           className="btn icon-only"
                           title="Previous line"
                           disabled={selectedPhraseIdx === 0}
-                          onClick={() => setSelectedPhraseId(phrases[selectedPhraseIdx - 1].id)}
+                          onClick={() => {
+                            const prev = phrases[selectedPhraseIdx - 1];
+                            setSelectedPhraseId(prev.id);
+                            if (isPlaying) void seekAndPlay(prev.startTime);
+                          }}
                         ><I.chevronLeft /></button>
                         <button
                           type="button"
                           className="btn icon-only"
                           title="Next line"
                           disabled={selectedPhraseIdx >= phrases.length - 1}
-                          onClick={() => setSelectedPhraseId(phrases[selectedPhraseIdx + 1].id)}
+                          onClick={() => {
+                            const next = phrases[selectedPhraseIdx + 1];
+                            setSelectedPhraseId(next.id);
+                            if (isPlaying) void seekAndPlay(next.startTime);
+                          }}
                         ><I.chevron /></button>
                         <div className="tb-divider" />
                         <div className="section-picker">
@@ -616,7 +617,7 @@ export default function App() {
                     selectedPhraseId={selectedPhraseId}
                     onSelectPhrase={setSelectedPhraseId}
                     onSplit={handleSplit}
-                    onSeek={seekAndPlay}
+                    onSeek={(t) => (isPlaying ? void seekAndPlay(t) : setPlayheadTime(t))}
                     playheadTime={playheadTime}
                     isPlaying={isPlaying}
                   />
@@ -1019,13 +1020,9 @@ function EmptyState({ onFile, onSample, error }: {
 // ============================================================
 // Song bar (after upload)
 // ============================================================
-function SongBar({ fileName, midiInfo, isPlaying, onTogglePlay, playheadTime, totalDuration }: {
+function SongBar({ fileName, midiInfo }: {
   fileName: string;
   midiInfo: MidiFileInfo | null;
-  isPlaying: boolean;
-  onTogglePlay: () => void;
-  playheadTime: number;
-  totalDuration: number;
 }) {
   return (
     <div className="song-bar">
@@ -1037,14 +1034,6 @@ function SongBar({ fileName, midiInfo, isPlaying, onTogglePlay, playheadTime, to
           <span>{midiInfo.trackName}</span>
         </div>
       )}
-      <span className="spacer" />
-      <div className="play-area">
-        <button type="button" className="btn small" onClick={onTogglePlay}>{isPlaying ? <I.pause /> : <I.play />}</button>
-        <div className="scrub">
-          <div className="scrub-fill" style={{ width: `${totalDuration ? (playheadTime / totalDuration) * 100 : 0}%` }} />
-        </div>
-        <span className="timecode">{fmtTime(playheadTime)} / {fmtTime(totalDuration)}</span>
-      </div>
     </div>
   );
 }

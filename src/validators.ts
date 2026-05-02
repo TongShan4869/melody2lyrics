@@ -61,20 +61,11 @@ export function endCollisionValidator(
   return null;
 }
 
-function tokenizeMustInclude(raw: string): Set<string> {
-  return new Set(
-    raw.toLowerCase().split(/[,\s]+/).map((token) => token.trim()).filter(Boolean),
-  );
-}
-
 export function fillerEndingValidator(
   line: string,
-  mustInclude: string,
 ): ValidationFailure | null {
   const target = endWord(line);
   if (!target) return null;
-  const allowed = tokenizeMustInclude(mustInclude);
-  if (allowed.has(target)) return null;
   if ((DEFAULT_FILLER_END_WORDS as readonly string[]).includes(target)) {
     return {
       type: 'filler',
@@ -149,7 +140,7 @@ export function validateLines(
     if (phrase) push(syllableValidator(line, phrase, { strict: context.strictSyllables }));
     if (lock) push(lockedWordsValidator(line, lock));
     push(endCollisionValidator(lines, sectionLabels, index));
-    push(fillerEndingValidator(line, context.mustInclude));
+    push(fillerEndingValidator(line));
     if (phrase) push(heldVowelValidator(line, phrase));
     push(avoidWordsValidator(line, context.avoid));
 

@@ -99,19 +99,22 @@ describe('endCollisionValidator', () => {
 
 describe('fillerEndingValidator', () => {
   it('fails when line ends in a default filler word', () => {
-    const result = fillerEndingValidator('falling through the night', '');
+    const result = fillerEndingValidator('falling through the night');
     expect(result).toEqual({
       type: 'filler',
       message: expect.stringContaining('night'),
     });
   });
 
-  it('passes when filler word is in mustInclude', () => {
-    expect(fillerEndingValidator('falling through the night', 'night, dream')).toBeNull();
+  it('still fails for filler endings even if the user mentions the word elsewhere', () => {
+    // mustInclude is "include this word somewhere", not "allow it as an ending".
+    // The filler-end check is about keeping line endings varied — independent of
+    // whether the word is otherwise required.
+    expect(fillerEndingValidator('falling through the night')).not.toBeNull();
   });
 
   it('passes for non-filler endings', () => {
-    expect(fillerEndingValidator('I will see you soon', '')).toBeNull();
+    expect(fillerEndingValidator('I will see you soon')).toBeNull();
   });
 });
 

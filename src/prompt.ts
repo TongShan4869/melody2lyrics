@@ -40,7 +40,7 @@ export function buildPrompt(phrases: Phrase[], locks: PhraseLockState[], context
 
   const fillerList = DEFAULT_FILLER_END_WORDS.join(', ');
 
-  const direction = context.direction && context.direction.trim()
+  const directionBase = context.direction && context.direction.trim()
     ? context.direction.trim()
     : `Theme: ${context.theme || 'open'}
 Mood: ${context.mood || 'open'}
@@ -48,6 +48,23 @@ Genre: ${context.genre || 'open'}
 Point of view: ${context.pov || 'open'}
 Must include: ${context.mustInclude || 'none'}
 Avoid: ${context.avoid || 'none'}`;
+
+  // When the freeform direction is used, structured Must include / Avoid fields
+  // would otherwise vanish from the prompt while validators still enforce them.
+  // Append them here so the model knows the constraints it will be checked against.
+  const usingFreeform = !!(context.direction && context.direction.trim());
+  const constraintTail: string[] = [];
+  if (usingFreeform) {
+    if (context.mustInclude.trim() && !directionBase.toLowerCase().includes('must include')) {
+      constraintTail.push(`Must include: ${context.mustInclude.trim()}`);
+    }
+    if (context.avoid.trim() && !directionBase.toLowerCase().includes('avoid')) {
+      constraintTail.push(`Avoid: ${context.avoid.trim()}`);
+    }
+  }
+  const direction = constraintTail.length
+    ? `${directionBase}\n${constraintTail.join('\n')}`
+    : directionBase;
 
   return `You are writing singable English lyrics to fit an existing melody.
 

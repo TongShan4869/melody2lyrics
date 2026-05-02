@@ -271,14 +271,6 @@ main {
 }
 .song-bar .midi-meta span:before { content: '· '; color: var(--ink-faint); margin-right: 6px; }
 .song-bar .midi-meta span:first-child:before { content: ''; margin: 0; }
-.song-bar .spacer { flex: 1; }
-.song-bar .play-area { display: flex; align-items: center; gap: 12px; }
-.scrub {
-  height: 4px; background: var(--surface-3); border-radius: 2px; width: 200px;
-  overflow: hidden;
-}
-.scrub-fill { height: 100%; background: var(--accent); transition: width 60ms linear; }
-.timecode { font-family: var(--mono); font-size: 11px; color: var(--ink-muted); min-width: 80px; }
 
 /* ========================================================
    Two-pane workspace
