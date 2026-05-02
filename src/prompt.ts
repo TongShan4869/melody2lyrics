@@ -16,8 +16,8 @@ export function buildPrompt(phrases: Phrase[], locks: PhraseLockState[], context
     const lock = locks[index];
     const section = sections[index] ? `[${sections[index]}] ` : '';
     const rhyme = rhymes[index] ? `(rhyme: ${rhymes[index]}) ` : '';
-    const rhythm = rhythmProfile(phrase);
-    const header = `Line ${index + 1} ${section}${rhyme}- ${phrase.syllables} syllables, stress = ${phrase.stressPattern}, rhythm = ${rhythm}, ends ${phrase.endingDirection}`;
+    const prosody = compoundProsody(phrase);
+    const header = `Line ${index + 1} ${section}${rhyme}- ${phrase.syllables} syllables, prosody = ${prosody}, ends ${phrase.endingDirection}`;
 
     if (!lock || !lock.rawInput.trim()) {
       return `${header}\n  Template: open (write any ${phrase.syllables}-syllable line)`;
@@ -70,6 +70,12 @@ Avoid: ${context.avoid || 'none'}`;
 
 CREATIVE DIRECTION
 ${direction}
+
+PROSODY PRINCIPLES (singability)
+1. Strength alignment: place stressed syllables on <strong> notes; unstressed on <weak>.
+2. Length alignment: place long syllables (open or held vowels — IPA [ː], or diphthongs like /eɪ/, /aɪ/, /aʊ/, /oʊ/, /ɔɪ/) on <long> notes; short, closed-vowel syllables on <short> notes.
+3. Singers can comfortably sustain long vowels and diphthongs; closed-vowel syllables on long notes feel strained.
+4. The compound template <strong/weak,long/short> per slot communicates both axes — honor it.
 
 RHYME PLAN: ${rhymePlan}
 - Use rhyme as a section identity, not as repeated filler endings.
@@ -145,6 +151,14 @@ export function sectionRhymePlan(sections: string[]): string {
 
 function isSectionRhymeMode(raw: string): boolean {
   return raw.trim().toUpperCase() === 'SECTION';
+}
+
+export function compoundProsody(phrase: Phrase): string {
+  return phrase.notes.map((note) => {
+    const strength = note.stress === 'S' ? 'strong' : 'weak';
+    const length = note.length === 'L' ? 'long' : 'short';
+    return `<${strength},${length}>`;
+  }).join('-');
 }
 
 export function rhythmProfile(phrase: Phrase): string {

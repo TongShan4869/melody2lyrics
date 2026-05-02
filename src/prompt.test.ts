@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { buildPrompt, buildRevisionPrompt, rhymeLabels, rhythmProfile, sectionRhymeLabels, sectionRhymePlan } from './prompt';
+import { buildPrompt, buildRevisionPrompt, compoundProsody, rhymeLabels, rhythmProfile, sectionRhymeLabels, sectionRhymePlan } from './prompt';
 import type { LyricsContext, Phrase, PhraseLockState } from './types';
 
 const context: LyricsContext = {
@@ -60,7 +60,7 @@ describe('prompt builder', () => {
     const prompt = buildPrompt([phrase], [lock], { ...context, rhymeScheme: 'SECTION' }, ['Chorus']);
 
     expect(prompt).toContain('LYRIC QUALITY CHECK');
-    expect(prompt).toContain('rhythm = short-short-held');
+    expect(prompt).toContain('prosody = <strong,short>-<weak,short>-<weak,long>');
     expect(prompt).toContain('Fit note duration');
     expect(prompt).toContain('RHYME PLAN: Choose one explicit rhyme family per section');
     expect(prompt).toContain('silently choose a specific rhyme family before writing');
@@ -68,6 +68,15 @@ describe('prompt builder', () => {
     expect(prompt).toContain('Avoid reusing the same final word');
     expect(prompt).toContain('Prefer near rhymes and internal rhymes');
     expect(prompt).toContain('light, night, tonight, fire, higher');
+  });
+
+  it('includes the prosody principles block', () => {
+    const prompt = buildPrompt([phrase], [lock], { ...context, rhymeScheme: 'SECTION' }, ['Chorus']);
+
+    expect(prompt).toContain('PROSODY PRINCIPLES (singability)');
+    expect(prompt).toContain('Strength alignment');
+    expect(prompt).toContain('Length alignment');
+    expect(prompt).toContain('<strong/weak,long/short>');
   });
 
   it('puts other notes at the end of the prompt', () => {
