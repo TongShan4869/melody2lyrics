@@ -28,7 +28,7 @@ The app is a browser-only React SPA. There is no backend; LLM API keys entered i
 Module roles:
 
 - **`midi.ts`** — picks the track with the most notes, normalizes time signature/PPQ, preserves `ticks` so `prosody.ts` can do tick-accurate metric stress. Also exports `buildSampleMelody` for the "Try a sample" CTA.
-- **`prosody.ts`** — gap-based phrase segmentation, then `splitOversizedPhrase` enforces auto line bounds (6 / 12 / 20 syllables) so dense rap runs don't become one giant line. `metricStress` prefers tick math (uses `ppq` and time signature) and falls back to seconds-based beat estimation. Stress is musical position, **not velocity** — `prosody.test.ts` enforces this. If a phrase has zero strong notes, the highest-scoring note is anchored as `S` so prompts stay usable.
+- **`prosody.ts`** — gap-based phrase segmentation, then `splitOversizedPhrase` enforces auto line bounds (6 / 12 / 20 syllables) so dense rap runs don't become one giant line. `metricStress` prefers tick math (uses `ppq` and time signature) and falls back to seconds-based beat estimation. Stress is musical position, **not velocity** — `prosody.test.ts` enforces this. If a phrase has zero strong notes, the highest-scoring note is anchored as `S` so prompts stay usable. Each note also carries a **`length`** field (`'L'` if its duration exceeds the phrase mean, `'S'` otherwise) per the XAI-Lyricist definition.
 - **`structure.ts`** — `detectSections` clusters phrases by melodic similarity (pitch contour + rhythm correlation) and labels the largest recurring cluster as Chorus, the rest as Verse, with run-based numbering. Runs once at MIDI upload to pre-fill `sectionLabels`; the user can still override via the toolbar dropdown.
 - **`prompt.ts`** — composes the LLM prompt. Two rhyme modes: `SECTION` (default; one rhyme family per section) and a per-line scheme (`ABAB`, `AABB`, `AXAX` where `X` = no rhyme); per-line pattern restarts at each new section. `LyricsContext.direction` (optional freeform string) replaces the structured Theme/Mood/Genre/POV block when present — that's how the Step 3 textarea feeds into the prompt. `buildRevisionPrompt` appends a CURRENT DRAFT block, [FAILING]/[KEEP] tags, and prior attempts so the model doesn't re-emit them.
 - **`validators.ts`** — six pure validators: `syllableValidator`, `lockedWordsValidator`, `endCollisionValidator`, `fillerEndingValidator`, `heldVowelValidator`, `avoidWordsValidator`. `validateLines` aggregates them per line.
@@ -79,3 +79,7 @@ Conventions to preserve:
 - `docs/melody_lyrics_tool_PRD.md` — full product requirements.
 - `docs/superpowers/specs/2026-04-29-agentic-lyric-pipeline-design.md` — design doc for the agentic pipeline.
 - `docs/superpowers/plans/2026-04-29-agentic-lyric-pipeline.md` — implementation plan that produced PR #1.
+- `docs/superpowers/specs/2026-05-02-prosody-singability-design.md` — design doc for the length-axis prosody upgrade.
+- `docs/superpowers/plans/2026-05-02-prosody-singability.md` — implementation plan for the length-axis prosody upgrade.
+- `docs/knowledge/singability.md` — curated XAI-Lyricist alignment principles used by the prompt and validators.
+- `docs/XAI_LYRICS.pdf` — original XAI-Lyricist paper.
