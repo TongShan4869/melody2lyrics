@@ -81,5 +81,7 @@ Conventions to preserve:
 - `docs/superpowers/plans/2026-04-29-agentic-lyric-pipeline.md` — implementation plan that produced PR #1.
 - `docs/superpowers/specs/2026-05-02-prosody-singability-design.md` — design doc for the length-axis prosody upgrade.
 - `docs/superpowers/plans/2026-05-02-prosody-singability.md` — implementation plan for the length-axis prosody upgrade.
+- `docs/superpowers/specs/2026-05-03-chorus-repetition-design.md` — design doc for the chorus-repetition prompt hint.
+- `docs/superpowers/plans/2026-05-03-chorus-repetition.md` — implementation plan for the chorus-repetition prompt hint.
 - `docs/knowledge/singability.md` — curated XAI-Lyricist alignment principles used by the prompt and validators.
 - `docs/XAI_LYRICS.pdf` — original XAI-Lyricist paper.
