@@ -136,6 +136,60 @@ describe('prompt builder', () => {
 
     expect(prompt.trim().endsWith('OTHER NOTES\nMake the hook brighter.')).toBe(true);
   });
+
+  it('omits empty structured direction fields instead of writing "Mood: open"', () => {
+    const sparse: LyricsContext = {
+      theme: 'Science in Motion',
+      mood: '',
+      genre: 'kpop dance',
+      pov: '',
+      otherNotes: '',
+      mustInclude: '',
+      avoid: '',
+      rhymeScheme: 'SECTION',
+      strictSyllables: true,
+    };
+    const prompt = buildPrompt([phrase], [lock], sparse, ['Chorus']);
+
+    expect(prompt).toContain('Theme: Science in Motion');
+    expect(prompt).toContain('Genre: kpop dance');
+    expect(prompt).not.toMatch(/^Mood:/m);
+    expect(prompt).not.toMatch(/^Point of view:/m);
+    expect(prompt).not.toMatch(/^Must include:/m);
+    expect(prompt).not.toMatch(/^Avoid:/m);
+    expect(prompt).not.toMatch(/Mood: open/);
+    expect(prompt).not.toMatch(/Must include: none/);
+  });
+
+  it('omits the OTHER NOTES section entirely when otherNotes is empty', () => {
+    const prompt = buildPrompt([phrase], [lock], { ...context, otherNotes: '' }, ['Chorus']);
+
+    expect(prompt).not.toContain('OTHER NOTES');
+  });
+
+  it('omits the CREATIVE DIRECTION block entirely when nothing structured or freeform is set', () => {
+    const blank: LyricsContext = {
+      theme: '', mood: '', genre: '', pov: '', otherNotes: '',
+      mustInclude: '', avoid: '', rhymeScheme: 'SECTION', strictSyllables: true,
+    };
+    const prompt = buildPrompt([phrase], [lock], blank, ['Chorus']);
+
+    expect(prompt).not.toContain('CREATIVE DIRECTION');
+  });
+
+  it('still appends must-include/avoid when freeform direction does not mention them', () => {
+    const ctx: LyricsContext = {
+      ...context,
+      direction: 'A glowing late-night ballad about returning home.',
+      mustInclude: 'starlight',
+      avoid: 'cliché',
+    };
+    const prompt = buildPrompt([phrase], [lock], ctx, ['Chorus']);
+
+    expect(prompt).toContain('A glowing late-night ballad');
+    expect(prompt).toContain('Must include: starlight');
+    expect(prompt).toContain('Avoid: cliché');
+  });
 });
 
 describe('clusterTags', () => {

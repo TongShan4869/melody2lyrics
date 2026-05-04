@@ -44,19 +44,28 @@ export function buildPrompt(phrases: Phrase[], locks: PhraseLockState[], context
 
   const fillerList = DEFAULT_FILLER_END_WORDS.join(', ');
 
-  const directionBase = context.direction && context.direction.trim()
-    ? context.direction.trim()
-    : `Theme: ${context.theme || 'open'}
-Mood: ${context.mood || 'open'}
-Genre: ${context.genre || 'open'}
-Point of view: ${context.pov || 'open'}
-Must include: ${context.mustInclude || 'none'}
-Avoid: ${context.avoid || 'none'}`;
+  const usingFreeform = !!(context.direction && context.direction.trim());
+  let directionBase: string;
+  if (usingFreeform) {
+    directionBase = context.direction!.trim();
+  } else {
+    const fields: Array<[string, string]> = [
+      ['Theme', context.theme],
+      ['Mood', context.mood],
+      ['Genre', context.genre],
+      ['Point of view', context.pov],
+      ['Must include', context.mustInclude],
+      ['Avoid', context.avoid],
+    ];
+    directionBase = fields
+      .filter(([, value]) => value && value.trim())
+      .map(([key, value]) => `${key}: ${value.trim()}`)
+      .join('\n');
+  }
 
   // When the freeform direction is used, structured Must include / Avoid fields
   // would otherwise vanish from the prompt while validators still enforce them.
   // Append them here so the model knows the constraints it will be checked against.
-  const usingFreeform = !!(context.direction && context.direction.trim());
   const constraintTail: string[] = [];
   if (usingFreeform) {
     if (context.mustInclude.trim() && !directionBase.toLowerCase().includes('must include')) {
@@ -67,13 +76,15 @@ Avoid: ${context.avoid || 'none'}`;
     }
   }
   const direction = constraintTail.length
-    ? `${directionBase}\n${constraintTail.join('\n')}`
+    ? `${directionBase}\n${constraintTail.join('\n')}`.trim()
     : directionBase;
 
-  return `You are writing singable English lyrics to fit an existing melody.
+  const directionBlock = direction ? `\n\nCREATIVE DIRECTION\n${direction}` : '';
+  const otherNotesBlock = context.otherNotes && context.otherNotes.trim()
+    ? `\n\nOTHER NOTES\n${context.otherNotes.trim()}`
+    : '';
 
-CREATIVE DIRECTION
-${direction}
+  return `You are writing singable English lyrics to fit an existing melody.${directionBlock}
 
 PROSODY PRINCIPLES (singability)
 1. Strength alignment: place stressed syllables on <strong> notes; unstressed on <weak>.
@@ -108,10 +119,7 @@ LYRIC QUALITY CHECK
 - Prefer near rhymes and internal rhymes when exact end rhyme would sound forced.
 - Avoid default filler rhyme words such as ${fillerList} unless the user specifically requested them.
 - Make each section do a different job: chorus can be hooky, rap can be more rhythmic and concrete, pre-chorus should build momentum.
-- Before returning, silently revise any line that feels generic, slogan-like, or only exists to complete a rhyme.
-
-OTHER NOTES
-${context.otherNotes || 'none'}`;
+- Before returning, silently revise any line that feels generic, slogan-like, or only exists to complete a rhyme.${otherNotesBlock}`;
 }
 
 export function fillSectionLabels(labels: string[], count: number): string[] {
