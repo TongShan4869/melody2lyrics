@@ -1,5 +1,6 @@
 import type { LineValidation, LyricsContext, Phrase, PhraseLockState } from './types';
 import { isFullyLocked, lockedWordsWithPositions, lockTemplate } from './locks';
+import { detectClusters } from './structure';
 
 export const DEFAULT_FILLER_END_WORDS = [
   'light', 'night', 'tonight', 'fire', 'higher',
@@ -151,6 +152,22 @@ export function sectionRhymePlan(sections: string[]): string {
 
 function isSectionRhymeMode(raw: string): boolean {
   return raw.trim().toUpperCase() === 'SECTION';
+}
+
+export function clusterTags(phrases: Phrase[]): (string | null)[] {
+  const ids = detectClusters(phrases);
+  const sizes = new Map<number, number>();
+  for (const id of ids) sizes.set(id, (sizes.get(id) ?? 0) + 1);
+
+  const letters = new Map<number, string>();
+  let nextChar = 65; // 'A'
+  for (const id of ids) {
+    if ((sizes.get(id) ?? 0) >= 2 && !letters.has(id)) {
+      letters.set(id, String.fromCharCode(nextChar++));
+    }
+  }
+
+  return ids.map((id) => letters.get(id) ?? null);
 }
 
 export function compoundProsody(phrase: Phrase): string {
