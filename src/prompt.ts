@@ -160,9 +160,10 @@ export function clusterTags(phrases: Phrase[]): (string | null)[] {
   for (const id of ids) sizes.set(id, (sizes.get(id) ?? 0) + 1);
 
   const letters = new Map<number, string>();
-  let nextChar = 65; // 'A'
+  let nextChar = 'A'.charCodeAt(0);
+  const lastChar = 'Z'.charCodeAt(0);
   for (const id of ids) {
-    if ((sizes.get(id) ?? 0) >= 2 && !letters.has(id)) {
+    if ((sizes.get(id) ?? 0) >= 2 && !letters.has(id) && nextChar <= lastChar) {
       letters.set(id, String.fromCharCode(nextChar++));
     }
   }
