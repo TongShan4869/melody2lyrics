@@ -13,12 +13,15 @@ export function buildPrompt(phrases: Phrase[], locks: PhraseLockState[], context
   const rhymes = sectionRhymeMode ? Array.from({ length: phrases.length }, () => '') : sectionRhymeLabels(context.rhymeScheme, sections);
   const rhymePlan = sectionRhymeMode ? sectionRhymePlan(sections) : 'Use the per-line rhyme labels shown below.';
 
+  const tags = clusterTags(phrases);
+
   const lines = phrases.map((phrase, index) => {
     const lock = locks[index];
     const section = sections[index] ? `[${sections[index]}] ` : '';
     const rhyme = rhymes[index] ? `(rhyme: ${rhymes[index]}) ` : '';
     const prosody = compoundProsody(phrase);
-    const header = `Line ${index + 1} ${section}${rhyme}- ${phrase.syllables} syllables, prosody = ${prosody}, ends ${phrase.endingDirection}`;
+    const repeatTag = tags[index] ? `(repeat ${tags[index]}) ` : '';
+    const header = `Line ${index + 1} ${section}${repeatTag}${rhyme}- ${phrase.syllables} syllables, prosody = ${prosody}, ends ${phrase.endingDirection}`;
 
     if (!lock || !lock.rawInput.trim()) {
       return `${header}\n  Template: open (write any ${phrase.syllables}-syllable line)`;
@@ -93,8 +96,9 @@ RULES
 5. Preserve stress: strong syllables should land on S positions where possible.
 6. Fit note duration: short syllables need quick, crisp sounds; held syllables need stretchable vowels or singable words that can sustain naturally.
 7. Avoid cramming consonant-heavy words onto fast notes or tiny filler words onto held notes.
-8. ${sectionRhymeMode ? 'For each section, silently choose a specific rhyme family before writing, then keep that section sonically connected without reusing the same final word.' : 'Follow rhyme labels within each section through rhyme families: lines with the same label should feel sonically connected, but should not reuse the same final word.'}
-9. Do not add explanations before or after the lyrics.
+8. Lines sharing a \`repeat X\` tag share an identical melody. Treat them as a single hook — reuse the same lyric verbatim (or with one small variation, like a final-line "twist") unless the section labels suggest contrasting verses, in which case vary the lyric while keeping the prosody.
+9. ${sectionRhymeMode ? 'For each section, silently choose a specific rhyme family before writing, then keep that section sonically connected without reusing the same final word.' : 'Follow rhyme labels within each section through rhyme families: lines with the same label should feel sonically connected, but should not reuse the same final word.'}
+10. Do not add explanations before or after the lyrics.
 
 LYRIC QUALITY CHECK
 - Every line must sound like natural contemporary English when spoken aloud.
