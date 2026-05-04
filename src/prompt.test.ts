@@ -74,6 +74,40 @@ describe('prompt builder', () => {
     expect(prompt).toContain('light, night, tonight, fire, higher');
   });
 
+  it('annotates clustered phrases with (repeat X) in the line header', () => {
+    // Two identical phrases (same pitches, same durations) should cluster as A.
+    const repeatedPhrase: Phrase = {
+      ...phrase,
+      id: 'phrase-2',
+      notes: phrase.notes.map((n, i) => ({ ...n, id: `m${i}` })),
+    };
+    const lock2: PhraseLockState = { ...lock, phraseIndex: 1 };
+
+    const prompt = buildPrompt([phrase, repeatedPhrase], [lock, lock2], { ...context, rhymeScheme: 'SECTION' }, ['Chorus', 'Chorus']);
+
+    // Both lines carry (repeat A), no (repeat B).
+    const repeatA = prompt.match(/\(repeat A\)/g) ?? [];
+    expect(repeatA).toHaveLength(2);
+    expect(prompt).not.toContain('(repeat B)');
+
+    // The tag appears between the section label and the dash before "syllables".
+    expect(prompt).toMatch(/Line 1 \[Chorus\] \(repeat A\) - \d+ syllables/);
+    expect(prompt).toMatch(/Line 2 \[Chorus\] \(repeat A\) - \d+ syllables/);
+  });
+
+  it('omits the repeat tag for singleton clusters', () => {
+    const prompt = buildPrompt([phrase], [lock], { ...context, rhymeScheme: 'SECTION' }, ['Chorus']);
+    expect(prompt).not.toContain('(repeat');
+  });
+
+  it('includes the chorus-repetition rule in the RULES block', () => {
+    const prompt = buildPrompt([phrase], [lock], { ...context, rhymeScheme: 'SECTION' }, ['Chorus']);
+    expect(prompt).toContain('8. Lines sharing a `repeat');
+    expect(prompt).toMatch(/share an identical melody/);
+    // Old rule 9 ("Do not add explanations before or after the lyrics.") should now be rule 10.
+    expect(prompt).toContain('10. Do not add explanations before or after the lyrics.');
+  });
+
   it('includes the prosody principles block', () => {
     const prompt = buildPrompt([phrase], [lock], { ...context, rhymeScheme: 'SECTION' }, ['Chorus']);
 
