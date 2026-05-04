@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { buildPrompt, buildRevisionPrompt, compoundProsody, rhymeLabels, rhythmProfile, sectionRhymeLabels, sectionRhymePlan } from './prompt';
+import { buildPrompt, buildRevisionPrompt, clusterTags, compoundProsody, rhymeLabels, rhythmProfile, sectionRhymeLabels, sectionRhymePlan } from './prompt';
 import type { LyricsContext, Phrase, PhraseLockState } from './types';
 
 const context: LyricsContext = {
@@ -74,6 +74,45 @@ describe('prompt builder', () => {
     expect(prompt).toContain('light, night, tonight, fire, higher');
   });
 
+  it('annotates clustered phrases with (repeat X) in the line header', () => {
+    // Two identical phrases (same pitches, same durations) should cluster as A.
+    const repeatedPhrase: Phrase = {
+      ...phrase,
+      id: 'phrase-2',
+      notes: phrase.notes.map((n, i) => ({ ...n, id: `m${i}` })),
+    };
+    const lock2: PhraseLockState = { ...lock, phraseIndex: 1 };
+
+    const prompt = buildPrompt([phrase, repeatedPhrase], [lock, lock2], { ...context, rhymeScheme: 'SECTION' }, ['Chorus', 'Chorus']);
+
+    // Both lines carry (repeat A), no (repeat B).
+    const repeatA = prompt.match(/\(repeat A\)/g) ?? [];
+    expect(repeatA).toHaveLength(2);
+    expect(prompt).not.toContain('(repeat B)');
+
+    // The tag appears between the section label and the dash before "syllables".
+    expect(prompt).toMatch(/Line 1 \[Chorus\] \(repeat A\) - \d+ syllables/);
+    expect(prompt).toMatch(/Line 2 \[Chorus\] \(repeat A\) - \d+ syllables/);
+
+    // Per-line rhyme mode composes with the repeat tag without spacing glitches.
+    const promptABAB = buildPrompt([phrase, repeatedPhrase], [lock, lock2], { ...context, rhymeScheme: 'ABAB' }, ['Chorus', 'Chorus']);
+    expect(promptABAB).toMatch(/Line 1 \[Chorus\] \(repeat A\) \(rhyme: A\) - \d+ syllables/);
+    expect(promptABAB).toMatch(/Line 2 \[Chorus\] \(repeat A\) \(rhyme: B\) - \d+ syllables/);
+  });
+
+  it('omits the repeat tag for singleton clusters', () => {
+    const prompt = buildPrompt([phrase], [lock], { ...context, rhymeScheme: 'SECTION' }, ['Chorus']);
+    expect(prompt).not.toContain('(repeat');
+  });
+
+  it('includes the chorus-repetition rule in the RULES block', () => {
+    const prompt = buildPrompt([phrase], [lock], { ...context, rhymeScheme: 'SECTION' }, ['Chorus']);
+    expect(prompt).toContain('8. Lines sharing a `repeat');
+    expect(prompt).toMatch(/share an identical melody/);
+    // Old rule 9 ("Do not add explanations before or after the lyrics.") should now be rule 10.
+    expect(prompt).toContain('10. Do not add explanations before or after the lyrics.');
+  });
+
   it('includes the prosody principles block', () => {
     const prompt = buildPrompt([phrase], [lock], { ...context, rhymeScheme: 'SECTION' }, ['Chorus']);
 
@@ -96,6 +135,46 @@ describe('prompt builder', () => {
     const prompt = buildPrompt([phrase], [lock], { ...context, otherNotes: 'Make the hook brighter.' }, ['Chorus']);
 
     expect(prompt.trim().endsWith('OTHER NOTES\nMake the hook brighter.')).toBe(true);
+  });
+});
+
+describe('clusterTags', () => {
+  const makePhrase = (id: string, durations: number[], pitches: number[]): Phrase => ({
+    id,
+    notes: durations.map((d, i) => ({
+      id: `${id}-n${i}`, midi: pitches[i] ?? 60, pitch: 'C4', time: i, duration: d, velocity: 0.8,
+      stressScore: 0.5, stress: 'w', length: 'S',
+    })),
+    syllables: durations.length,
+    stressPattern: '',
+    endingDirection: 'level',
+    startTime: 0,
+    endTime: 0,
+  });
+
+  it('returns null for every phrase when nothing clusters', () => {
+    const a = makePhrase('a', [0.5, 0.5, 0.5, 0.5], [60, 64, 67, 72]);
+    const b = makePhrase('b', [1.0, 0.25, 0.25, 1.0], [72, 67, 64, 60]);
+    expect(clusterTags([a, b])).toEqual([null, null]);
+  });
+
+  it('assigns A to a cluster of two', () => {
+    const a = makePhrase('a', [0.5, 0.5, 0.5, 0.5], [60, 64, 67, 72]);
+    const b = makePhrase('b', [0.5, 0.5, 0.5, 0.5], [60, 64, 67, 72]);
+    const c = makePhrase('c', [1.0, 0.25, 0.25, 1.0], [72, 67, 64, 60]);
+    expect(clusterTags([a, b, c])).toEqual(['A', 'A', null]);
+  });
+
+  it('assigns A and B to two distinct repeating clusters', () => {
+    const a1 = makePhrase('a1', [0.5, 0.5, 0.5, 0.5], [60, 64, 67, 72]);
+    const b1 = makePhrase('b1', [1.0, 0.25, 0.25, 1.0], [72, 67, 64, 60]);
+    const a2 = makePhrase('a2', [0.5, 0.5, 0.5, 0.5], [60, 64, 67, 72]);
+    const b2 = makePhrase('b2', [1.0, 0.25, 0.25, 1.0], [72, 67, 64, 60]);
+    expect(clusterTags([a1, b1, a2, b2])).toEqual(['A', 'B', 'A', 'B']);
+  });
+
+  it('returns empty array for empty input', () => {
+    expect(clusterTags([])).toEqual([]);
   });
 });
 

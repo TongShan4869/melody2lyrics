@@ -57,7 +57,7 @@ export function phraseSimilarity(a: Phrase, b: Phrase): number {
   return 0.55 * pitchScore + 0.3 * rhythmScore + 0.15 * lengthScore;
 }
 
-const SIMILARITY_THRESHOLD = 0.85;
+const SIMILARITY_THRESHOLD = 0.9;
 
 export function detectClusters(phrases: Phrase[]): number[] {
   if (phrases.length === 0) return [];
