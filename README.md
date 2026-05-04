@@ -4,19 +4,22 @@ A browser-only songwriting tool that turns a MIDI melody into a prosody-aware ly
 
 ## Features
 
-- Upload `.mid` / `.midi` files under 10 MB.
-- Parse MIDI with `@tonejs/midi` and select the track with the most notes.
+- Upload `.mid` / `.midi` files under 10 MB; parsed with `@tonejs/midi`, picking the track with the most notes.
 - Show MIDI metadata: track name, tempo, meter, and PPQ.
-- Segment melody into lyric phrases and estimate per-note stress.
+- Two-axis prosody analysis per the XAI-Lyricist taxonomy:
+  - **Strength** — strong / weak beats marked `S` / `w` from tick-accurate metric position (not velocity).
+  - **Length** — long / short notes per the paper's definition (duration > phrase mean).
+- Each line in the LLM prompt carries a compound template such as `<strong,long>-<weak,short>-...` so the model honors both axes.
+- Section detection clusters melodically-similar phrases and labels them `Chorus` / `Verse` with run-based numbering. The toolbar dropdown lets you override.
+- Recurring melodies get a `(repeat A)` annotation in the prompt so the model can produce intentional hook repetition rather than incidental duplicates.
+- Active-line slot row with `S` / `w` markers and auto-flowed syllable text.
+- Lock partial lyric content per line with `_` placeholders, plus `word:N` syllable overrides (e.g. `fire:1`).
+- Manually split phrases by clicking note bars or merge adjacent phrases.
 - Preview the full MIDI or play each phrase/line individually.
-- Manually split phrases by clicking note bars and merge adjacent phrases.
-- Lock partial lyric content per line with `_` placeholders.
-- Count English syllables with `word:N` overrides, such as `fire:1`.
-- Build a detailed copyable LLM prompt.
+- Seven validators run on every generation and drive up to 3 revision iterations: syllable count, locked words, end-word collision, default-filler endings, held-vowel singability, length-alignment singability, avoid-word list.
 - Generate lyrics in-tool with OpenAI, Anthropic, or DeepSeek API keys.
-- Choose curated model IDs, or use a custom model ID for newly released models.
-- Validate generated lyrics against locked words.
-- Copy lyrics or export a `.txt` file with metadata.
+- Free-text Model ID input — paste any current identifier from the chosen provider.
+- View the raw prompt at any time, copy lyrics, or export a `.txt` file with metadata.
 
 ## Quick Start
 
@@ -49,7 +52,7 @@ npm test         # run unit tests
 3. Use `Play preview` or `Play line` to audition the melody.
 4. Optionally split or merge phrase boundaries.
 5. Add locked lyric fragments with `_` for open syllable slots.
-6. Fill in theme, mood, genre, POV, rhyme scheme, and other direction fields.
+6. Describe the song in the freeform direction textarea — genre, mood, theme, POV, anything that should shape the lyric. Style chips, rhyme strategy, and a strict-syllable toggle live alongside it.
 7. Copy the generated prompt or enter an API key and generate in-tool.
 8. Edit and lock good output lines, then regenerate the rest.
 9. Copy lyrics or export a `.txt` file.
@@ -81,12 +84,14 @@ fire:1 _ _ _
 The app can call:
 
 - OpenAI Responses API
-- Anthropic Messages API
+- Anthropic Messages API (with `anthropic-dangerous-direct-browser-access` for direct browser CORS)
 - DeepSeek Chat Completions API
 
 API keys are entered in the browser and sent directly to the selected provider. They are not stored by the app.
 
-Model choices are curated in the dropdown, with a `Custom model ID` option for newly released or account-specific models.
+The Model ID input is free-text — paste any current identifier supported by the chosen provider. Model IDs go stale frequently, so verify the name on the provider's docs before each session.
+
+Each generation runs through `runPipeline`: it builds the prompt, calls the chosen provider, runs all validators, and on any failure feeds the failing lines back to the model with the prior attempts (up to 3 iterations) before returning. Lock a line in the result to pin it for the next round.
 
 ## Current Limitations
 
@@ -96,10 +101,9 @@ Model choices are curated in the dropdown, with a `Custom model ID` option for n
 - No saved projects or account system.
 - No vocal synthesis or sing-along playback.
 
-## PRD
+## Reference docs
 
-The product requirements document lives at:
-
-```text
-docs/melody_lyrics_tool_PRD.md
-```
+- `docs/melody_lyrics_tool_PRD.md` — full product requirements.
+- `docs/knowledge/singability.md` — curated XAI-Lyricist alignment principles used by the prompt and validators.
+- `docs/XAI_LYRICS.pdf` — the original XAI-Lyricist paper (IJCAI-24).
+- `docs/superpowers/specs/` and `docs/superpowers/plans/` — design specs and implementation plans for shipped features.
