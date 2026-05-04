@@ -93,6 +93,11 @@ describe('prompt builder', () => {
     // The tag appears between the section label and the dash before "syllables".
     expect(prompt).toMatch(/Line 1 \[Chorus\] \(repeat A\) - \d+ syllables/);
     expect(prompt).toMatch(/Line 2 \[Chorus\] \(repeat A\) - \d+ syllables/);
+
+    // Per-line rhyme mode composes with the repeat tag without spacing glitches.
+    const promptABAB = buildPrompt([phrase, repeatedPhrase], [lock, lock2], { ...context, rhymeScheme: 'ABAB' }, ['Chorus', 'Chorus']);
+    expect(promptABAB).toMatch(/Line 1 \[Chorus\] \(repeat A\) \(rhyme: A\) - \d+ syllables/);
+    expect(promptABAB).toMatch(/Line 2 \[Chorus\] \(repeat A\) \(rhyme: B\) - \d+ syllables/);
   });
 
   it('omits the repeat tag for singleton clusters', () => {
