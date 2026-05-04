@@ -104,6 +104,23 @@ export function heldVowelValidator(
   };
 }
 
+export function lengthAlignmentValidator(
+  line: string,
+  phrase: Phrase,
+): ValidationFailure | null {
+  const lastNote = phrase.notes[phrase.notes.length - 1];
+  if (!lastNote || lastNote.length !== 'L') return null;
+  if (isFinalNoteHeld(phrase)) return null; // heldVowelValidator owns the held case
+  const word = lastWord(line);
+  const vowel = finalVowel(word);
+  if (vowel === null) return null;
+  if (isOpenVowel(vowel)) return null;
+  return {
+    type: 'length-alignment',
+    message: `final note is long but "${word}" ends in a closed vowel (${vowel})`,
+  };
+}
+
 export function avoidWordsValidator(
   line: string,
   avoid: string,
@@ -142,6 +159,7 @@ export function validateLines(
     push(endCollisionValidator(lines, sectionLabels, index));
     push(fillerEndingValidator(line));
     if (phrase) push(heldVowelValidator(line, phrase));
+    if (phrase) push(lengthAlignmentValidator(line, phrase));
     push(avoidWordsValidator(line, context.avoid));
 
     return {

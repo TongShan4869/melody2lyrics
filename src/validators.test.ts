@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { syllableValidator, lockedWordsValidator, endCollisionValidator, fillerEndingValidator, heldVowelValidator, avoidWordsValidator, validateLines } from './validators';
+import { syllableValidator, lockedWordsValidator, endCollisionValidator, fillerEndingValidator, heldVowelValidator, lengthAlignmentValidator, avoidWordsValidator, validateLines } from './validators';
 import type { Phrase, LyricsContext, PhraseLockState } from './types';
 import { parseLockInput } from './locks';
 
@@ -120,7 +120,7 @@ describe('fillerEndingValidator', () => {
 
 const note = (duration: number): import('./types').AnalyzedNote => ({
   id: 'n', midi: 60, pitch: 'C4', time: 0, duration, velocity: 0.8,
-  stressScore: 0.5, stress: 'w',
+  stressScore: 0.5, stress: 'w', length: 'S',
 });
 
 const phraseWith = (durations: number[]): Phrase => ({
@@ -156,6 +156,78 @@ describe('heldVowelValidator', () => {
   it('passes when final word is unknown (skip)', () => {
     const phrase = phraseWith([0.25, 0.25, 0.25, 1.5]);
     expect(heldVowelValidator('whispering xyzzy', phrase)).toBeNull();
+  });
+});
+
+describe('lengthAlignmentValidator', () => {
+  const longTail = (durations: number[]): Phrase => ({
+    id: 'p',
+    notes: durations.map((d, i) => ({
+      id: `n${i}`, midi: 60, pitch: 'C4', time: i, duration: d, velocity: 0.8,
+      stressScore: 0.5, stress: 'w', length: i === durations.length - 1 ? 'L' : 'S',
+    })),
+    syllables: durations.length,
+    stressPattern: '',
+    endingDirection: 'level',
+    startTime: 0,
+    endTime: 0,
+  });
+
+  const shortTail = (durations: number[]): Phrase => ({
+    id: 'p',
+    notes: durations.map((d, i) => ({
+      id: `n${i}`, midi: 60, pitch: 'C4', time: i, duration: d, velocity: 0.8,
+      stressScore: 0.5, stress: 'w', length: 'S',
+    })),
+    syllables: durations.length,
+    stressPattern: '',
+    endingDirection: 'level',
+    startTime: 0,
+    endTime: 0,
+  });
+
+  it('fails when long final note carries a closed-vowel word', () => {
+    // durations [0.5, 0.5, 0.5, 0.8]: last/median = 0.8/0.5 = 1.6 < 1.75 → long but NOT held
+    const result = lengthAlignmentValidator('something I find sad', longTail([0.5, 0.5, 0.5, 0.8]));
+    expect(result).toEqual({
+      type: 'length-alignment',
+      message: expect.stringContaining('sad'),
+    });
+  });
+
+  it('passes when long final note carries an open-vowel word', () => {
+    expect(lengthAlignmentValidator('walking far away', longTail([0.5, 0.5, 0.5, 0.8]))).toBeNull();
+  });
+
+  it('passes when long final note carries a diphthong word', () => {
+    expect(lengthAlignmentValidator('looking at the sky', longTail([0.5, 0.5, 0.5, 0.8]))).toBeNull();
+  });
+
+  it('passes when final note is short (no trigger)', () => {
+    expect(lengthAlignmentValidator('something I find sad', shortTail([0.2, 0.2, 0.2, 0.2]))).toBeNull();
+  });
+
+  it('passes when final word is unknown (skip)', () => {
+    expect(lengthAlignmentValidator('whispering xyzzy', longTail([0.5, 0.5, 0.8]))).toBeNull();
+  });
+
+  it('defers to heldVowelValidator when final note is also held', () => {
+    // 0.2-second notes followed by a 1.0s held note: held threshold triggers
+    // (1.0 / median(0.2) = 5x ≥ 1.75x), and length-alignment would also have
+    // triggered without the guard. The validator should yield to held-vowel.
+    const heldAndLong: Phrase = {
+      id: 'p',
+      notes: [0.2, 0.2, 0.2, 1.0].map((d, i) => ({
+        id: `n${i}`, midi: 60, pitch: 'C4', time: i, duration: d, velocity: 0.8,
+        stressScore: 0.5, stress: 'w', length: i === 3 ? 'L' : 'S',
+      })),
+      syllables: 4,
+      stressPattern: '',
+      endingDirection: 'level',
+      startTime: 0,
+      endTime: 0,
+    };
+    expect(lengthAlignmentValidator('something I find sad', heldAndLong)).toBeNull();
   });
 });
 

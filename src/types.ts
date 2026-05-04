@@ -26,6 +26,7 @@ export type ParsedMidi = {
 export type AnalyzedNote = Note & {
   stressScore: number;
   stress: 'S' | 'w';
+  length: 'L' | 'S';
 };
 
 export type Phrase = {
@@ -78,6 +79,7 @@ export type ValidationFailureType =
   | 'end-collision'
   | 'filler'
   | 'held-vowel'
+  | 'length-alignment'
   | 'avoid';
 
 export type ValidationFailure = {

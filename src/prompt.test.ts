@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { buildPrompt, buildRevisionPrompt, rhymeLabels, rhythmProfile, sectionRhymeLabels, sectionRhymePlan } from './prompt';
+import { buildPrompt, buildRevisionPrompt, compoundProsody, rhymeLabels, rhythmProfile, sectionRhymeLabels, sectionRhymePlan } from './prompt';
 import type { LyricsContext, Phrase, PhraseLockState } from './types';
 
 const context: LyricsContext = {
@@ -17,9 +17,9 @@ const context: LyricsContext = {
 const phrase: Phrase = {
   id: 'phrase-1',
   notes: [
-    { id: 'n1', midi: 60, pitch: 'C4', time: 0, duration: 0.2, velocity: 0.8, stressScore: 1, stress: 'S' },
-    { id: 'n2', midi: 62, pitch: 'D4', time: 0.2, duration: 0.2, velocity: 0.8, stressScore: 0.4, stress: 'w' },
-    { id: 'n3', midi: 64, pitch: 'E4', time: 0.4, duration: 0.5, velocity: 0.8, stressScore: 0.4, stress: 'w' },
+    { id: 'n1', midi: 60, pitch: 'C4', time: 0, duration: 0.2, velocity: 0.8, stressScore: 1, stress: 'S', length: 'S' },
+    { id: 'n2', midi: 62, pitch: 'D4', time: 0.2, duration: 0.2, velocity: 0.8, stressScore: 0.4, stress: 'w', length: 'S' },
+    { id: 'n3', midi: 64, pitch: 'E4', time: 0.4, duration: 0.5, velocity: 0.8, stressScore: 0.4, stress: 'w', length: 'L' },
   ],
   syllables: 10,
   stressPattern: 'S-w-w-w-w-S-w-w-S-w',
@@ -42,6 +42,10 @@ describe('prompt builder', () => {
     expect(rhythmProfile(phrase)).toBe('short-short-held');
   });
 
+  it('emits compound prosody tokens per note', () => {
+    expect(compoundProsody(phrase)).toBe('<strong,short>-<weak,short>-<weak,long>');
+  });
+
   it('treats X rhyme labels as free lines', () => {
     expect(rhymeLabels('AX', 4)).toEqual(['A', '', 'A', '']);
   });
@@ -60,7 +64,7 @@ describe('prompt builder', () => {
     const prompt = buildPrompt([phrase], [lock], { ...context, rhymeScheme: 'SECTION' }, ['Chorus']);
 
     expect(prompt).toContain('LYRIC QUALITY CHECK');
-    expect(prompt).toContain('rhythm = short-short-held');
+    expect(prompt).toContain('prosody = <strong,short>-<weak,short>-<weak,long>');
     expect(prompt).toContain('Fit note duration');
     expect(prompt).toContain('RHYME PLAN: Choose one explicit rhyme family per section');
     expect(prompt).toContain('silently choose a specific rhyme family before writing');
@@ -68,6 +72,24 @@ describe('prompt builder', () => {
     expect(prompt).toContain('Avoid reusing the same final word');
     expect(prompt).toContain('Prefer near rhymes and internal rhymes');
     expect(prompt).toContain('light, night, tonight, fire, higher');
+  });
+
+  it('includes the prosody principles block', () => {
+    const prompt = buildPrompt([phrase], [lock], { ...context, rhymeScheme: 'SECTION' }, ['Chorus']);
+
+    expect(prompt).toContain('PROSODY PRINCIPLES (singability)');
+    expect(prompt).toContain('Strength alignment');
+    expect(prompt).toContain('Length alignment');
+    expect(prompt).toContain('<strong/weak,long/short>');
+
+    const block = prompt.split('PROSODY PRINCIPLES (singability)\n')[1].split('\n\nRHYME PLAN:')[0];
+    expect(`PROSODY PRINCIPLES (singability)\n${block}`).toMatchInlineSnapshot(`
+      "PROSODY PRINCIPLES (singability)
+      1. Strength alignment: place stressed syllables on <strong> notes; unstressed on <weak>.
+      2. Length alignment: place long syllables (open or held vowels — IPA [ː], or diphthongs like /eɪ/, /aɪ/, /aʊ/, /oʊ/, /ɔɪ/) on <long> notes; short, closed-vowel syllables on <short> notes.
+      3. Singers can comfortably sustain long vowels and diphthongs; closed-vowel syllables on long notes feel strained.
+      4. The compound template <strong/weak,long/short> per slot communicates both axes — honor it."
+    `);
   });
 
   it('puts other notes at the end of the prompt', () => {
