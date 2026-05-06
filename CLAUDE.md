@@ -84,5 +84,6 @@ Conventions to preserve:
 - `docs/superpowers/specs/2026-05-03-chorus-repetition-design.md` — design doc for the chorus-repetition prompt hint.
 - `docs/superpowers/plans/2026-05-03-chorus-repetition.md` — implementation plan for the chorus-repetition prompt hint.
 - `docs/superpowers/specs/2026-05-06-lyrics-navigator-design.md` — design doc for the right-panel lyrics navigator (replaces the wide Full Lyrics card).
+- `docs/superpowers/plans/2026-05-06-lyrics-navigator.md` — implementation plan for the right-panel lyrics navigator.
 - `docs/knowledge/singability.md` — curated XAI-Lyricist alignment principles used by the prompt and validators.
 - `docs/XAI_LYRICS.pdf` — original XAI-Lyricist paper.
