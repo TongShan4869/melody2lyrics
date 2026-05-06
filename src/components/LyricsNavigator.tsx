@@ -22,12 +22,14 @@ export function LyricsNavigator({
   onLockAll,
 }: Props) {
   const selectedRef = useRef<HTMLButtonElement | null>(null);
+  const hasOutput = output.some((o) => o?.text);
 
   useEffect(() => {
+    if (!hasOutput) return;
     selectedRef.current?.scrollIntoView({ block: 'nearest' });
-  }, [selectedPhraseId]);
+  }, [selectedPhraseId, hasOutput]);
 
-  if (!output.some((o) => o?.text)) return null;
+  if (!hasOutput) return null;
 
   return (
     <div className="lyrics-nav panel">
@@ -55,7 +57,8 @@ export function LyricsNavigator({
               <button
                 ref={isSelected ? selectedRef : undefined}
                 type="button"
-                className={`lyrics-nav-row ${isSelected ? 'selected' : ''}`}
+                className={isSelected ? 'lyrics-nav-row selected' : 'lyrics-nav-row'}
+                aria-pressed={isSelected}
                 onClick={() => onSelectPhrase(phrase.id)}
               >
                 {text || <span className="muted">(not generated)</span>}
