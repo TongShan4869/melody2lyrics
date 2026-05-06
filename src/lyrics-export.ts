@@ -1,7 +1,6 @@
-import type { GeneratedLine, Phrase } from './types';
+import type { GeneratedLine } from './types';
 
 export function formatLyricsForCopy(
-  phrases: Phrase[],
   output: (GeneratedLine | null)[],
   sectionLabels: string[],
 ): string {
@@ -10,7 +9,7 @@ export function formatLyricsForCopy(
   const parts: string[] = [];
   let prevSection: string | null = null;
 
-  for (let i = 0; i < phrases.length; i++) {
+  for (let i = 0; i < output.length; i++) {
     const sec = sectionLabels[i] ?? '';
     const text = output[i]?.text ?? '';
     if (sec && sec !== prevSection) {
