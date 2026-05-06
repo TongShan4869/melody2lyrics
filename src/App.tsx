@@ -617,7 +617,12 @@ export default function App() {
                     selectedPhraseId={selectedPhraseId}
                     onSelectPhrase={setSelectedPhraseId}
                     onSplit={handleSplit}
-                    onSeek={(t) => (isPlaying ? void seekAndPlay(t) : setPlayheadTime(t))}
+                    onSeek={(t) => {
+                      if (isPlaying) void seekAndPlay(t);
+                      else setPlayheadTime(t);
+                      const cur = phrases.find((p) => t >= p.startTime && t <= p.endTime);
+                      if (cur) setSelectedPhraseId(cur.id);
+                    }}
                     playheadTime={playheadTime}
                     isPlaying={isPlaying}
                   />
