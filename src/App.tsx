@@ -21,7 +21,6 @@ import type {
 import { I } from './components/Icons';
 import { LyricsNavigator } from './components/LyricsNavigator';
 import { PianoRoll } from './components/PianoRoll';
-import { formatLyricsForCopy } from './lyrics-export';
 import {
   applyTheme,
   TweakRadio,
@@ -853,8 +852,6 @@ export default function App() {
                   sectionLabels={sectionLabels}
                   selectedPhraseId={selectedPhraseId}
                   onSelectPhrase={setSelectedPhraseId}
-                  onCopyAll={() => copyText(formatLyricsForCopy(output, sectionLabels), 'Lyrics copied.')}
-                  onLockAll={() => setOutput((o) => o.map((l) => (l ? { ...l, locked: true } : l)))}
                 />
               </div>
             </div>
