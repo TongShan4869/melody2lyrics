@@ -768,7 +768,7 @@ main {
   padding: 12px 16px;
   border-bottom: 1px solid var(--border);
 }
-.lyrics-nav-head .row { display: inline-flex; gap: 6px; }
+.lyrics-nav-head .row { display: inline-flex; gap: 6px; flex-wrap: wrap; justify-content: flex-end; }
 .lyrics-nav-head h3 {
   margin: 0;
   font-family: var(--mono);

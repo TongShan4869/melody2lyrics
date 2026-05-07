@@ -34,7 +34,6 @@ import {
 const DIRECTION_TEMPLATE = `Theme:
 Mood:
 Genre:
-Point of view: first person
 
 Must include:
 Avoid: clichés, forced rhymes
@@ -489,17 +488,6 @@ export default function App() {
               </div>
             )}
 
-            {output.length > 0 && !isGenerating && (
-              <div className="lyrics-actions">
-                <span className="lyrics-actions-label">
-                  <I.sparkle /> {output.length} lines generated · edit any line below to lock it
-                </span>
-                <span className="grow" />
-                <button type="button" className="btn ghost tiny" onClick={() => setOutput((o) => o.map((l) => ({ ...l, locked: false })))}><I.unlock /> Unlock all</button>
-                <button type="button" className="btn ghost tiny" onClick={() => setOutput([])}><I.x /> Clear</button>
-              </div>
-            )}
-
             <div className="workspace">
               {/* LEFT: Step 2 — Shape */}
               <div className="panel">
@@ -864,7 +852,9 @@ export default function App() {
                     copyText(parts.join('\n'), 'Lyrics copied.');
                   }}
                   onLockAll={() => setOutput((o) => o.map((l) => (l ? { ...l, locked: true } : l)))}
+                  onUnlockAll={() => setOutput((o) => o.map((l) => (l ? { ...l, locked: false } : l)))}
                   onExport={exportTxt}
+                  onClear={() => setOutput([])}
                 />
               </div>
             </div>

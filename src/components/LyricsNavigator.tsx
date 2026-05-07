@@ -10,7 +10,9 @@ type Props = {
   onSelectPhrase: (id: string) => void;
   onCopyAll: () => void;
   onLockAll: () => void;
+  onUnlockAll: () => void;
   onExport: () => void;
+  onClear: () => void;
 };
 
 export function LyricsNavigator({
@@ -21,7 +23,9 @@ export function LyricsNavigator({
   onSelectPhrase,
   onCopyAll,
   onLockAll,
+  onUnlockAll,
   onExport,
+  onClear,
 }: Props) {
   const selectedRef = useRef<HTMLButtonElement | null>(null);
   const hasOutput = output.some((o) => o?.text);
@@ -44,8 +48,14 @@ export function LyricsNavigator({
           <button type="button" className="btn ghost tiny" onClick={onLockAll} title="Lock every line">
             <I.lock /> Lock all
           </button>
+          <button type="button" className="btn ghost tiny" onClick={onUnlockAll} title="Unlock every line">
+            <I.unlock /> Unlock all
+          </button>
           <button type="button" className="btn ghost tiny" onClick={onExport} title="Export lyrics as .txt">
             <I.download /> Export .txt
+          </button>
+          <button type="button" className="btn ghost tiny" onClick={onClear} title="Clear all generated lyrics">
+            <I.x /> Clear
           </button>
         </div>
       </div>
