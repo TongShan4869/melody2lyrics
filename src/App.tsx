@@ -836,6 +836,7 @@ export default function App() {
                   output={output}
                   sectionLabels={sectionLabels}
                   selectedPhraseId={selectedPhraseId}
+                  isGenerating={isGenerating}
                   onSelectPhrase={setSelectedPhraseId}
                   onCopyAll={() => {
                     const parts: string[] = [];

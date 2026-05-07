@@ -819,6 +819,32 @@ main {
   color: var(--ink-faint);
   font-style: italic;
 }
+.lyrics-nav-row .muted.generating {
+  animation: lyrics-nav-pulse 1.4s ease-in-out infinite;
+}
+.lyrics-nav-row .word {
+  display: inline-block;
+  opacity: 0;
+  transform: translateY(2px);
+  animation: lyrics-nav-word-reveal 360ms ease both;
+}
+.lyrics-nav-spinner {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  margin-left: 8px;
+  border-radius: 50%;
+  background: var(--accent);
+  vertical-align: middle;
+  animation: lyrics-nav-pulse 1.1s ease-in-out infinite;
+}
+@keyframes lyrics-nav-word-reveal {
+  to { opacity: 1; transform: none; }
+}
+@keyframes lyrics-nav-pulse {
+  0%, 100% { opacity: 0.45; }
+  50% { opacity: 1; }
+}
 
 /* ========================================================
    Lyrics action bar / writing banner

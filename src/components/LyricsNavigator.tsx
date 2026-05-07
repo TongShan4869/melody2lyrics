@@ -7,6 +7,7 @@ type Props = {
   output: (GeneratedLine | null)[];
   sectionLabels: string[];
   selectedPhraseId: string | null;
+  isGenerating: boolean;
   onSelectPhrase: (id: string) => void;
   onCopyAll: () => void;
   onLockAll: () => void;
@@ -20,6 +21,7 @@ export function LyricsNavigator({
   output,
   sectionLabels,
   selectedPhraseId,
+  isGenerating,
   onSelectPhrase,
   onCopyAll,
   onLockAll,
@@ -29,28 +31,35 @@ export function LyricsNavigator({
 }: Props) {
   const selectedRef = useRef<HTMLButtonElement | null>(null);
   const hasOutput = output.some((o) => o?.text);
+  const allLocked = output.length > 0 && output.every((l) => l?.locked);
 
   useEffect(() => {
     if (!hasOutput) return;
     selectedRef.current?.scrollIntoView({ block: 'nearest' });
   }, [selectedPhraseId, hasOutput]);
 
-  if (!hasOutput) return null;
+  if (!hasOutput && !isGenerating) return null;
 
   return (
-    <div className="lyrics-nav panel">
+    <div className={`lyrics-nav panel ${isGenerating ? 'is-generating' : ''}`}>
       <div className="lyrics-nav-head">
-        <h3>Lyrics</h3>
+        <h3>
+          Lyrics
+          {isGenerating && <span className="lyrics-nav-spinner" aria-label="Generating" />}
+        </h3>
         <div className="row">
           <button type="button" className="btn ghost tiny" onClick={onCopyAll} title="Copy all lyrics to clipboard">
             <I.copy /> Copy
           </button>
-          <button type="button" className="btn ghost tiny" onClick={onLockAll} title="Lock every line">
-            <I.lock /> Lock all
-          </button>
-          <button type="button" className="btn ghost tiny" onClick={onUnlockAll} title="Unlock every line">
-            <I.unlock /> Unlock all
-          </button>
+          {allLocked ? (
+            <button type="button" className="btn ghost tiny" onClick={onUnlockAll} title="Unlock every line">
+              <I.unlock /> Unlock all
+            </button>
+          ) : (
+            <button type="button" className="btn ghost tiny" onClick={onLockAll} title="Lock every line">
+              <I.lock /> Lock all
+            </button>
+          )}
           <button type="button" className="btn ghost tiny" onClick={onExport} title="Export lyrics as .txt">
             <I.download /> Export .txt
           </button>
@@ -76,12 +85,40 @@ export function LyricsNavigator({
                 aria-pressed={isSelected}
                 onClick={() => onSelectPhrase(phrase.id)}
               >
-                {text || <span className="muted">(not generated)</span>}
+                {renderRowContent(text, i, isGenerating)}
               </button>
             </Fragment>
           );
         })}
       </div>
     </div>
+  );
+}
+
+function renderRowContent(text: string, lineIdx: number, isGenerating: boolean) {
+  if (!text) {
+    return (
+      <span className={`muted ${isGenerating ? 'generating' : ''}`}>
+        {isGenerating ? '(generating…)' : '(not generated)'}
+      </span>
+    );
+  }
+
+  if (!isGenerating) return text;
+
+  // Per-word reveal during generation. Key on text so a revision iteration replays the animation.
+  const words = text.split(/(\s+)/);
+  return (
+    <span key={text} className="words">
+      {words.map((word, wordIdx) => {
+        if (/^\s+$/.test(word)) return word;
+        const delay = (lineIdx * 0.18) + (wordIdx * 0.025);
+        return (
+          <span key={wordIdx} className="word" style={{ animationDelay: `${delay}s` }}>
+            {word}
+          </span>
+        );
+      })}
+    </span>
   );
 }
