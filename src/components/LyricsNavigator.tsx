@@ -30,6 +30,7 @@ export function LyricsNavigator({
   onClear,
 }: Props) {
   const selectedRef = useRef<HTMLButtonElement | null>(null);
+  const navRef = useRef<HTMLDivElement | null>(null);
   const hasOutput = output.some((o) => o?.text);
   const allLocked = output.length > 0 && output.every((l) => l?.locked);
 
@@ -38,10 +39,16 @@ export function LyricsNavigator({
     selectedRef.current?.scrollIntoView({ block: 'nearest' });
   }, [selectedPhraseId, hasOutput]);
 
+  useEffect(() => {
+    if (isGenerating) {
+      navRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
+  }, [isGenerating]);
+
   if (!hasOutput && !isGenerating) return null;
 
   return (
-    <div className={`lyrics-nav panel ${isGenerating ? 'is-generating' : ''}`}>
+    <div ref={navRef} className={`lyrics-nav panel ${isGenerating ? 'is-generating' : ''}`}>
       <div className="lyrics-nav-head">
         <h3>
           Lyrics
