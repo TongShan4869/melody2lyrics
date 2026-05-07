@@ -1,4 +1,4 @@
-import { Fragment, useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { buildSampleMelody, parseMidiFile, type SampleMelody } from './midi';
 import { analyzeNotes, mergePhrases, splitPhrase } from './prosody';
 import { buildPrompt } from './prompt';
@@ -19,6 +19,7 @@ import type {
   Phrase,
 } from './types';
 import { I } from './components/Icons';
+import { LyricsNavigator } from './components/LyricsNavigator';
 import { PianoRoll } from './components/PianoRoll';
 import {
   applyTheme,
@@ -33,7 +34,6 @@ import {
 const DIRECTION_TEMPLATE = `Theme:
 Mood:
 Genre:
-Point of view: first person
 
 Must include:
 Avoid: clichés, forced rhymes
@@ -488,20 +488,6 @@ export default function App() {
               </div>
             )}
 
-            {output.length > 0 && !isGenerating && (
-              <div className="lyrics-actions">
-                <span className="lyrics-actions-label">
-                  <I.sparkle /> {output.length} lines generated · edit any line below to lock it
-                </span>
-                <span className="grow" />
-                <button type="button" className="btn ghost tiny" onClick={() => setOutput((o) => o.map((l) => ({ ...l, locked: true })))}><I.lock /> Lock all</button>
-                <button type="button" className="btn ghost tiny" onClick={() => setOutput((o) => o.map((l) => ({ ...l, locked: false })))}><I.unlock /> Unlock all</button>
-                <button type="button" className="btn ghost tiny" onClick={() => copyText(output.map((l) => l.text).join('\n'), 'Lyrics copied.')}><I.copy /> Copy</button>
-                <button type="button" className="btn ghost tiny" onClick={exportTxt}><I.download /> Export .txt</button>
-                <button type="button" className="btn ghost tiny" onClick={() => setOutput([])}><I.x /> Clear</button>
-              </div>
-            )}
-
             <div className="workspace">
               {/* LEFT: Step 2 — Shape */}
               <div className="panel">
@@ -844,93 +830,36 @@ export default function App() {
                   </summary>
                   <pre>{prompt}</pre>
                 </details>
+
+                <LyricsNavigator
+                  phrases={phrases}
+                  output={output}
+                  sectionLabels={sectionLabels}
+                  selectedPhraseId={selectedPhraseId}
+                  isGenerating={isGenerating}
+                  onSelectPhrase={setSelectedPhraseId}
+                  onCopyAll={() => {
+                    const parts: string[] = [];
+                    let prevSec: string | null = null;
+                    for (let i = 0; i < output.length; i++) {
+                      const sec = sectionLabels[i] ?? '';
+                      if (sec && sec !== prevSec) {
+                        if (parts.length > 0) parts.push('');
+                        parts.push(`[${sec}]`);
+                      }
+                      parts.push(output[i]?.text ?? '');
+                      prevSec = sec || prevSec;
+                    }
+                    copyText(parts.join('\n'), 'Lyrics copied.');
+                  }}
+                  onLockAll={() => setOutput((o) => o.map((l) => (l ? { ...l, locked: true } : l)))}
+                  onUnlockAll={() => setOutput((o) => o.map((l) => (l ? { ...l, locked: false } : l)))}
+                  onExport={exportTxt}
+                  onClear={() => setOutput([])}
+                />
               </div>
             </div>
 
-            {/* Full lyrics card */}
-            {output.length > 0 && output.some((o) => o?.text) && (
-              <div className="panel full-lyrics">
-                <div className="panel-head">
-                  <div>
-                    <span className="step-num">Result</span>
-                    <h2 style={{ display: 'inline' }}>Full lyrics</h2>
-                  </div>
-                  <div className="row">
-                    <button
-                      type="button"
-                      className="btn ghost small"
-                      title="Copy all lyrics to clipboard"
-                      onClick={() => {
-                        const lines = output.map((o, i) => {
-                          const sec = sectionLabels[i];
-                          const prefix = sec ? `\n[${sec}]\n` : '';
-                          return prefix + (o?.text ?? '');
-                        }).join('\n').trim();
-                        copyText(lines, 'Lyrics copied.');
-                      }}
-                    ><I.copy /> Copy all</button>
-                    <button
-                      type="button"
-                      className="btn ghost small"
-                      title="Lock every line"
-                      onClick={() => setOutput((o) => o.map((l) => (l ? { ...l, locked: true } : l)))}
-                    ><I.lock /> Lock all</button>
-                  </div>
-                </div>
-                <div className="full-lyrics-body">
-                  {phrases.map((phrase, i) => {
-                    const o = output[i];
-                    const text = o?.text ?? '';
-                    const userSyl = text ? countSyllables(text) : 0;
-                    const target = phrase.syllables;
-                    const sylDelta = userSyl - target;
-                    const sylStatus = !text ? 'empty' : sylDelta === 0 ? 'match' : Math.abs(sylDelta) === 1 ? 'close' : 'off';
-                    const isActive = phrase.id === selectedPhraseId;
-                    const sec = sectionLabels[i];
-                    return (
-                      <Fragment key={phrase.id}>
-                        {sec && <div className="fl-section">{sec}</div>}
-                        <div
-                          className={`fl-row ${isActive ? 'active' : ''} ${o?.locked ? 'locked' : ''}`}
-                          onClick={() => setSelectedPhraseId(phrase.id)}
-                        >
-                          <div className="fl-num">{i + 1}</div>
-                          <input
-                            className="fl-text"
-                            type="text"
-                            value={text}
-                            placeholder="(not generated)"
-                            onClick={(e) => e.stopPropagation()}
-                            onChange={(e) => setOutput((cur) => cur.map((l, j) => (
-                              j === i
-                                ? { ...(l ?? { text: '', locked: false, validation: null }), text: e.target.value, locked: true }
-                                : l
-                            )))}
-                            spellCheck={false}
-                          />
-                          <span className={`fl-syl ${sylStatus}`} title={`${userSyl} of ${target} syllables`}>
-                            {userSyl}/{target}
-                          </span>
-                          <button
-                            type="button"
-                            className={`fl-lock ${o?.locked ? 'on' : ''}`}
-                            title={o?.locked ? "Locked — won't change on regenerate" : 'Unlocked — will regenerate'}
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              setOutput((cur) => cur.map((l, j) => (
-                                j === i
-                                  ? { ...(l ?? { text: '', locked: false, validation: null }), locked: !l?.locked }
-                                  : l
-                              )));
-                            }}
-                          >{o?.locked ? <I.lock /> : <I.unlock />}</button>
-                        </div>
-                      </Fragment>
-                    );
-                  })}
-                </div>
-              </div>
-            )}
           </>
         )}
       </main>

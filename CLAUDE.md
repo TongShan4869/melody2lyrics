@@ -55,7 +55,7 @@ The UI was rebuilt from a Claude Design handoff (commit `b6c55b6`). Three-step I
 2. **Step 2 · Shape** — left panel: sticky toolbar (play/stop/play-line + prev/next + section dropdown + merge/split, all targeting the *selected* phrase) above a piano roll, with an Active Line focus panel below showing only the selected (or auto-followed-during-playback) phrase. Slot row under the lyric input shows `S/w` markers above and the auto-flowed syllable text below.
 3. **Step 3 · Styles** — right panel (`position: sticky`): single freeform textarea (preloaded with a Theme/Mood/Genre template) + a horizontally scrollable row of style chips + rhyme strategy + strict-syllable toggle + Generate bar.
 
-After generation a Full Lyrics card appears below the workspace with all lines stacked, section headers, syllable badges, per-line lock toggles. The Active Line and Full Lyrics card stay in sync — clicking a row in the card selects that phrase upstream.
+After generation a compact Lyrics Navigator appears in the right panel below the Generate bar. Each row is a clickable phrase summary with section group headers; clicking a row selects that phrase, which the existing wiring already uses to scroll the piano roll and update the Active Line panel. All bulk actions on the generated set (Copy / Lock all / Unlock all / Export .txt / Clear) live in the navigator's header — the navigator is the single surface for both reading and acting on the lyric set.
 
 Conventions to preserve:
 - **Pink editorial accent** `#f5b8c8`. Themes (Editorial / Studio / Paper) live in `components/TweaksPanel.tsx`'s `THEMES` constant; switch via the floating cog (bottom-right). Don't hard-code accent colors in components — use `var(--accent)` etc.
@@ -83,7 +83,7 @@ Conventions to preserve:
 - `docs/superpowers/plans/2026-05-02-prosody-singability.md` — implementation plan for the length-axis prosody upgrade.
 - `docs/superpowers/specs/2026-05-03-chorus-repetition-design.md` — design doc for the chorus-repetition prompt hint.
 - `docs/superpowers/plans/2026-05-03-chorus-repetition.md` — implementation plan for the chorus-repetition prompt hint.
-- `docs/superpowers/specs/2026-05-06-lyrics-navigator-design.md` — design doc for the right-panel lyrics navigator (replaces the wide Full Lyrics card).
+- `docs/superpowers/specs/2026-05-06-lyrics-navigator-design.md` — design doc for the right-panel lyrics navigator.
 - `docs/superpowers/plans/2026-05-06-lyrics-navigator.md` — implementation plan for the right-panel lyrics navigator.
 - `docs/knowledge/singability.md` — curated XAI-Lyricist alignment principles used by the prompt and validators.
 - `docs/XAI_LYRICS.pdf` — original XAI-Lyricist paper.
