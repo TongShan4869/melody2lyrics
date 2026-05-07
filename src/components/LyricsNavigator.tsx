@@ -1,5 +1,6 @@
 import { Fragment, useEffect, useRef } from 'react';
 import type { GeneratedLine, Phrase } from '../types';
+import { I } from './Icons';
 
 type Props = {
   phrases: Phrase[];
@@ -7,6 +8,9 @@ type Props = {
   sectionLabels: string[];
   selectedPhraseId: string | null;
   onSelectPhrase: (id: string) => void;
+  onCopyAll: () => void;
+  onLockAll: () => void;
+  onExport: () => void;
 };
 
 export function LyricsNavigator({
@@ -15,6 +19,9 @@ export function LyricsNavigator({
   sectionLabels,
   selectedPhraseId,
   onSelectPhrase,
+  onCopyAll,
+  onLockAll,
+  onExport,
 }: Props) {
   const selectedRef = useRef<HTMLButtonElement | null>(null);
   const hasOutput = output.some((o) => o?.text);
@@ -30,6 +37,17 @@ export function LyricsNavigator({
     <div className="lyrics-nav panel">
       <div className="lyrics-nav-head">
         <h3>Lyrics</h3>
+        <div className="row">
+          <button type="button" className="btn ghost tiny" onClick={onCopyAll} title="Copy all lyrics to clipboard">
+            <I.copy /> Copy
+          </button>
+          <button type="button" className="btn ghost tiny" onClick={onLockAll} title="Lock every line">
+            <I.lock /> Lock all
+          </button>
+          <button type="button" className="btn ghost tiny" onClick={onExport} title="Export lyrics as .txt">
+            <I.download /> Export .txt
+          </button>
+        </div>
       </div>
       <div className="lyrics-nav-body">
         {phrases.map((phrase, i) => {

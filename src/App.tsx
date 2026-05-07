@@ -495,10 +495,7 @@ export default function App() {
                   <I.sparkle /> {output.length} lines generated · edit any line below to lock it
                 </span>
                 <span className="grow" />
-                <button type="button" className="btn ghost tiny" onClick={() => setOutput((o) => o.map((l) => ({ ...l, locked: true })))}><I.lock /> Lock all</button>
                 <button type="button" className="btn ghost tiny" onClick={() => setOutput((o) => o.map((l) => ({ ...l, locked: false })))}><I.unlock /> Unlock all</button>
-                <button type="button" className="btn ghost tiny" onClick={() => copyText(output.map((l) => l.text).join('\n'), 'Lyrics copied.')}><I.copy /> Copy</button>
-                <button type="button" className="btn ghost tiny" onClick={exportTxt}><I.download /> Export .txt</button>
                 <button type="button" className="btn ghost tiny" onClick={() => setOutput([])}><I.x /> Clear</button>
               </div>
             )}
@@ -852,6 +849,22 @@ export default function App() {
                   sectionLabels={sectionLabels}
                   selectedPhraseId={selectedPhraseId}
                   onSelectPhrase={setSelectedPhraseId}
+                  onCopyAll={() => {
+                    const parts: string[] = [];
+                    let prevSec: string | null = null;
+                    for (let i = 0; i < output.length; i++) {
+                      const sec = sectionLabels[i] ?? '';
+                      if (sec && sec !== prevSec) {
+                        if (parts.length > 0) parts.push('');
+                        parts.push(`[${sec}]`);
+                      }
+                      parts.push(output[i]?.text ?? '');
+                      prevSec = sec || prevSec;
+                    }
+                    copyText(parts.join('\n'), 'Lyrics copied.');
+                  }}
+                  onLockAll={() => setOutput((o) => o.map((l) => (l ? { ...l, locked: true } : l)))}
+                  onExport={exportTxt}
                 />
               </div>
             </div>
